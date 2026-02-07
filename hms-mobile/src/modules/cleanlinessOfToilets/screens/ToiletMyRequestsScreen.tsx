@@ -3,10 +3,11 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, 
 import { ToiletApi } from "../../../api/modules";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../../../navigation/types";
+import ToiletLayout from "../components/ToiletLayout";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-export default function ToiletMyRequestsScreen({ navigation }: { navigation: Nav }) {
+export default function ToiletMyRequestsScreen({ navigation, embedded = false }: { navigation: Nav, embedded?: boolean }) {
     const [registrations, setRegistrations] = useState<any[]>([]);
     const [inspections, setInspections] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -74,16 +75,16 @@ export default function ToiletMyRequestsScreen({ navigation }: { navigation: Nav
         </View>
     );
 
-    return (
-        <SafeAreaView style={styles.safe}>
-            <StatusBar barStyle="dark-content" />
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}><Text style={styles.backBtn}>←</Text></TouchableOpacity>
-                <Text style={styles.title}>Submissions</Text>
-                <TouchableOpacity style={styles.addBtn} onPress={() => navigation.navigate("ToiletRegister")}>
-                    <Text style={styles.addBtnText}>+ NEW</Text>
-                </TouchableOpacity>
-            </View>
+    const content = (
+        <View style={{ flex: 1 }}>
+            {/* Action Row */}
+            {!embedded && (
+                <View style={styles.actionRow}>
+                    <TouchableOpacity style={styles.addBtn} onPress={() => navigation.navigate("ToiletRegister")}>
+                        <Text style={styles.addBtnText}>+ NEW SUBMISSION</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
 
             <View style={styles.tabBar}>
                 <TouchableOpacity
@@ -117,7 +118,27 @@ export default function ToiletMyRequestsScreen({ navigation }: { navigation: Nav
                     }
                 />
             )}
-        </SafeAreaView>
+        </View>
+    );
+
+    if (embedded) {
+        return (
+            <SafeAreaView style={styles.safe}>
+                {content}
+            </SafeAreaView>
+        );
+    }
+
+    return (
+        <ToiletLayout
+            title="My Requests"
+            navigation={navigation}
+            showBack
+        >
+            <View style={styles.safe}>
+                {content}
+            </View>
+        </ToiletLayout>
     );
 }
 
@@ -132,11 +153,9 @@ function StatusBadge({ status }: { status: string }) {
 
 const styles = StyleSheet.create({
     safe: { flex: 1, backgroundColor: "#fcfdfe" },
-    header: { height: 70, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-    backBtn: { fontSize: 24, fontWeight: '700', color: '#1e293b' },
-    title: { fontSize: 20, fontWeight: '900', color: '#0f172a' },
-    addBtn: { backgroundColor: '#1d4ed8', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14, elevation: 4, shadowColor: '#1d4ed8', shadowOpacity: 0.2, shadowRadius: 8 },
-    addBtnText: { color: '#fff', fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
+    actionRow: { padding: 20, paddingBottom: 0 },
+    addBtn: { backgroundColor: '#1d4ed8', paddingVertical: 14, borderRadius: 16, alignItems: 'center', shadowColor: '#1d4ed8', shadowOpacity: 0.2, shadowRadius: 8, elevation: 4 },
+    addBtnText: { color: '#fff', fontSize: 13, fontWeight: '900', letterSpacing: 0.8 },
     tabBar: { flexDirection: 'row', backgroundColor: '#f1f5f9', padding: 6, margin: 20, borderRadius: 16, marginBottom: 0 },
     tab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 12 },
     activeTab: { backgroundColor: '#fff', elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },

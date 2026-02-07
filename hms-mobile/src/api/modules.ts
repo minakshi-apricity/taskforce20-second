@@ -31,7 +31,7 @@ export const ModuleRecordsApi = {
 
 export const ToiletApi = {
   // Stats & Dashboard
-  getDashboardStats: () => request<{ pendingReview: number; inspectionsDone: number }>("/modules/toilet/stats"),
+  getDashboardStats: () => request<any>("/modules/toilet/stats"),
 
   // Registration
   requestToilet: (payload: any) => request("/modules/toilet/register", {
@@ -65,10 +65,14 @@ export const ToiletApi = {
     method: "POST",
     body: JSON.stringify({ status: payload.status, comment: payload.remarks })
   }),
-  listInspections: (params: { status?: string }) => {
-    const query = params.status ? `?status=${params.status}` : "";
-    return request<{ inspections: any[] }>(`/modules/toilet/inspections${query}`);
+  listInspections: (params: any) => {
+    const query = new URLSearchParams(params).toString();
+    return request<{ inspections: any[] }>(`/modules/toilet/inspections?${query}`);
   },
+  resolveInspection: (id: string, payload: { photo: string; remarks: string }) => request(`/modules/toilet/inspections/${id}/resolve`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  }),
   listToilets: () => request<{ toilets: any[] }>("/modules/toilet/all"),
   getMyToilets: () => request<{ toilets: any[] }>("/modules/toilet/assigned"),
   getMyInspectionHistory: () => request<{ inspections: any[] }>("/modules/toilet/inspections"),

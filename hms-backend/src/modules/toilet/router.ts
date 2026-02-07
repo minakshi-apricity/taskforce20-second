@@ -12,6 +12,19 @@ import { getQcScope } from "../../utils/qcScope";
 const router = Router();
 const MODULE_KEY = "TOILET";
 
+async function getExpandedQcScope(params: { userId: string; cityId: string; moduleId: string; roles?: Role[] }) {
+  const scope = await getQcScope(params);
+  if (scope.zoneIds.length > 0) {
+    const childWards = await prisma.geoNode.findMany({
+      where: { cityId: params.cityId, level: 'WARD', parentId: { in: scope.zoneIds } },
+      select: { id: true }
+    });
+    const ids = childWards.map(w => w.id);
+    scope.wardIds = Array.from(new Set([...scope.wardIds, ...ids]));
+  }
+  return scope;
+}
+
 router.use(authenticate, requireCityContext());
 
 function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -57,6 +70,7 @@ router.post("/register", validateBody(registerSchema), async (req, res, next) =>
         cityId,
         requestedById: userId,
         wardId: payload.wardId,
+        zoneId: payload.wardId ? (await prisma.geoNode.findUnique({ where: { id: payload.wardId }, select: { parentId: true } }))?.parentId : undefined,
         name: payload.name,
         type: payload.type,
         gender: payload.gender,
@@ -106,7 +120,7 @@ router.get("/pending", async (req, res, next) => {
 
     let scopeFilter: any = {};
     if (isOnlyQC) {
-      const scope = await getQcScope({ userId, cityId, moduleId });
+      const scope = await getExpandedQcScope({ userId, cityId, moduleId });
       if (scope.zoneIds.length > 0 || scope.wardIds.length > 0) {
         scopeFilter = {
           OR: [
@@ -300,6 +314,49 @@ router.post("/:id/approve", validateBody(approveSchema), async (req, res, next) 
   }
 });
 
+const rejectSchema = z.object({
+  reason: z.string().optional()
+});
+
+router.post("/:id/reject", validateBody(rejectSchema), async (req, res, next) => {
+  try {
+    const cityId = req.auth!.cityId!;
+    const userId = req.auth!.sub!;
+    const moduleId = await getModuleIdByName(MODULE_KEY);
+    await assertModuleAccess(req, res, moduleId, [Role.QC, Role.CITY_ADMIN]);
+
+    const { reason } = req.body as z.infer<typeof rejectSchema>;
+    const toilet = await prisma.toilet.findUnique({ where: { id: req.params.id as string } });
+    if (!toilet || toilet.cityId !== cityId) throw new HttpError(404, "Toilet not found");
+
+    // Scope Check
+    const userRoles = req.auth!.roles || [];
+    const isQC = userRoles.includes(Role.QC) && !userRoles.includes(Role.CITY_ADMIN);
+    if (isQC) {
+      const scope = await getExpandedQcScope({ userId, cityId, moduleId });
+      if (scope.zoneIds.length > 0 || scope.wardIds.length > 0) {
+        // Check if toilet falls in scope
+        const inZone = toilet.zoneId && scope.zoneIds.includes(toilet.zoneId);
+        const inWard = toilet.wardId && scope.wardIds.includes(toilet.wardId);
+        if (!inZone && !inWard) {
+          throw new HttpError(403, "Toilet is outside your assigned scope");
+        }
+      }
+    }
+
+    const updated = await prisma.toilet.update({
+      where: { id: toilet.id },
+      data: {
+        status: ToiletStatus.REJECTED
+      }
+    });
+
+    res.json({ toilet: updated });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/assigned", async (req, res, next) => {
   try {
     const cityId = req.auth!.cityId!;
@@ -445,7 +502,7 @@ router.get("/stats", async (req, res, next) => {
     // Role.QC or Role.ACTION_OFFICER or Role.CITY_ADMIN
     let scopeFilter: any = {};
     if (isOnlyQCorAO) {
-      const scope = await getQcScope({ userId, cityId, moduleId });
+      const scope = await getExpandedQcScope({ userId, cityId, moduleId });
       if (scope.zoneIds.length > 0 || scope.wardIds.length > 0) {
         scopeFilter = {
           OR: [
@@ -631,7 +688,7 @@ router.get("/reports/summary", async (req, res, next) => {
 
     let scopeFilter: any = {};
     if (isOnlyQCorAO) {
-      const scope = await getQcScope({ userId, cityId, moduleId });
+      const scope = await getExpandedQcScope({ userId, cityId, moduleId });
       if (scope.zoneIds.length > 0 || scope.wardIds.length > 0) {
         scopeFilter = {
           OR: [
@@ -674,7 +731,7 @@ router.get("/all", async (req, res, next) => {
 
     let scopeFilter: any = {};
     if (isOnlyQCorAO) {
-      const scope = await getQcScope({ userId, cityId, moduleId });
+      const scope = await getExpandedQcScope({ userId, cityId, moduleId });
       if (scope.zoneIds.length > 0 || scope.wardIds.length > 0) {
         scopeFilter = {
           OR: [
@@ -849,7 +906,7 @@ router.get("/inspections", async (req, res, next) => {
 
     let scopeFilter: any = {};
     if (isOnlyQCorAO) {
-      const scope = await getQcScope({ userId, cityId, moduleId });
+      const scope = await getExpandedQcScope({ userId, cityId, moduleId });
       if (scope.zoneIds.length > 0 || scope.wardIds.length > 0) {
         scopeFilter = {
           OR: [

@@ -41,8 +41,8 @@ import {
 
 /* ✅ Cleanliness Of Toilets Module (ADDED ONLY) */
 import {
-  ToiletHomeScreen,
-  ToiletEmployeeTabs,
+  ToiletQCDashboard,
+  ToiletEmpDashboard,
   ToiletQcTabs,
   ToiletInspectionScreen,
   ToiletReviewScreen,
@@ -51,6 +51,12 @@ import {
   ToiletPendingRegistrationScreen,
   ToiletMasterScreen,
   ToiletHelpScreen,
+  ToiletEmployeeHome,
+  ToiletProfileScreen,
+  ToiletQCStaffScreen,
+  ToiletEmpMapScreen,
+  ToiletAODashboard,
+  ToiletAOResolveScreen
 } from "../modules/cleanlinessOfToilets";
 
 import { useAuthContext } from "../auth/AuthProvider";
@@ -201,10 +207,10 @@ export function RootNavigator() {
       />
 
       {/* ✅ Cleanliness Of Toilets (ADDED) */}
-      <Stack.Screen name="ToiletHome" component={ToiletHomeScreen} options={{ title: "Toilets" }} />
+      <Stack.Screen name="ToiletHome" component={ToiletQCDashboard} options={{ title: "Toilets" }} />
       <Stack.Screen
         name="ToiletEmployeeTabs"
-        component={ToiletEmployeeTabs}
+        component={ToiletEmpDashboard}
         options={{ title: "Daily Operations" }}
       />
       <Stack.Screen name="ToiletQcTabs" component={ToiletQcTabs} options={{ title: "QC Dashboard" }} />
@@ -227,6 +233,12 @@ export function RootNavigator() {
       />
       <Stack.Screen name="ToiletMaster" component={ToiletMasterScreen} options={{ title: "All Toilets" }} />
       <Stack.Screen name="ToiletHelp" component={ToiletHelpScreen} options={{ title: "Help" }} />
+      <Stack.Screen name="ToiletAssets" component={ToiletEmployeeHome} options={{ title: "Assigned Toilets" }} />
+      <Stack.Screen name="ToiletProfile" component={ToiletProfileScreen} options={{ title: "My Profile" }} />
+      <Stack.Screen name="ToiletStaff" component={ToiletQCStaffScreen} options={{ title: "Staff" }} />
+      <Stack.Screen name="ToiletMap" component={ToiletEmpMapScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="ToiletAODashboard" component={ToiletAODashboard} options={{ title: "Action Officer" }} />
+      <Stack.Screen name="ToiletAOResolve" component={ToiletAOResolveScreen} options={{ title: "Resolve Issue" }} />
     </Stack.Navigator>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ApiError, ToiletApi } from '@lib/apiClient';
 import Link from 'next/link';
+import { FilterTabs } from "../qc-shared";
 
 export default function ReportsTab() {
     const [stats, setStats] = useState<any>(null);
@@ -68,16 +69,15 @@ export default function ReportsTab() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
                         <h2 style={{ fontSize: 18, fontWeight: 900, color: '#0f172a', margin: 0 }}>Operational Intelligence</h2>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                            {['today', 'week', 'month'].map(f => (
-                                <button
-                                    key={f}
-                                    className={`btn btn-sm ${dateFilter === f ? 'btn-primary' : 'btn-outline'}`}
-                                    onClick={() => setDateFilter(f)}
-                                    style={{ borderRadius: 10, fontSize: 11, fontWeight: 800 }}
-                                >
-                                    {f.toUpperCase()}
-                                </button>
-                            ))}
+                            <FilterTabs
+                                tabs={[
+                                    { id: 'today', label: 'TODAY' },
+                                    { id: 'week', label: 'WEEK' },
+                                    { id: 'month', label: 'MONTH' }
+                                ]}
+                                activeTab={dateFilter}
+                                onChange={(id) => setDateFilter(id)}
+                            />
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: '#f1f5f9', padding: '4px 10px', borderRadius: 12 }}>
                                 <span style={{ fontSize: 10, fontWeight: 900, color: '#64748b' }}>📅 </span>
                                 <input
@@ -120,11 +120,15 @@ export default function ReportsTab() {
                 <div className="employee-dashboard">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
                         <div className="tab-filters">
-                            {['today', 'week', 'month'].map(f => (
-                                <button key={f} className={`btn btn-sm ${dateFilter === f ? 'btn-primary' : 'btn-outline'}`} onClick={() => setDateFilter(f)} style={{ borderRadius: 10 }}>
-                                    {f.toUpperCase()}
-                                </button>
-                            ))}
+                            <FilterTabs
+                                tabs={[
+                                    { id: 'today', label: 'TODAY' },
+                                    { id: 'week', label: 'WEEK' },
+                                    { id: 'month', label: 'MONTH' }
+                                ]}
+                                activeTab={dateFilter}
+                                onChange={(id) => setDateFilter(id)}
+                            />
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <input

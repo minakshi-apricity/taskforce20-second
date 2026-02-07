@@ -52,6 +52,7 @@ export default function Sidebar() {
     if (user.roles.includes("CITY_ADMIN" as Role) || user.roles.includes("COMMISSIONER" as Role)) {
       links.push({ label: "City Dashboard", href: "/city" });
     }
+    links.push({ label: "Employees", href: "/employees" });
     links.push(...moduleLinks);
   }
 

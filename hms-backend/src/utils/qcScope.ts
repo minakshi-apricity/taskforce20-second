@@ -27,9 +27,22 @@ export async function getQcScope(params: {
   const wardSet = new Set<string>();
 
   moduleAssignments.forEach((m) => {
-    (m.zoneIds || []).forEach((z) => zoneSet.add(z));  // STRICT: No fallback to city-level scope. Must be defined in module.
+    (m.zoneIds || []).forEach((z) => zoneSet.add(z));
     (m.wardIds || []).forEach((w) => wardSet.add(w));
   });
+
+  // Fallback to City-level scope if no module-level scope defined
+  if (zoneSet.size === 0 && wardSet.size === 0) {
+    const cityAssignments = await prisma.userCity.findMany({
+      where: { userId, cityId, role: { in: roles } },
+      select: { zoneIds: true, wardIds: true }
+    });
+
+    cityAssignments.forEach((m) => {
+      (m.zoneIds || []).forEach((z) => zoneSet.add(z));
+      (m.wardIds || []).forEach((w) => wardSet.add(w));
+    });
+  }
 
   return { zoneIds: Array.from(zoneSet), wardIds: Array.from(wardSet) };
 }

@@ -39,4 +39,10 @@ export type RootStackParamList = {
   ToiletPendingRegistration: undefined;
   ToiletMaster: undefined;
   ToiletHelp: undefined;
+  ToiletAssets: undefined;
+  ToiletProfile: undefined;
+  ToiletStaff: undefined;
+  ToiletMap: { toilets?: any[] };
+  ToiletAODashboard: undefined;
+  ToiletAOResolve: { inspection: any };
 };

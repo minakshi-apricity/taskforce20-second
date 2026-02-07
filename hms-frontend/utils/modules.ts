@@ -40,7 +40,7 @@ export function routeForModule(key: CanonicalModuleKey) {
 export function moduleEmployeePath(key: CanonicalModuleKey) {
   const base = routeForModule(key);
   if (key === "TASKFORCE") return `/modules/${base}/tasks`;
-  if (key === "TOILET") return `/modules/${base}`;
+
   return `/modules/${base}/employee`;
 }
 

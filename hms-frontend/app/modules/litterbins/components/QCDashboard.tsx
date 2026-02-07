@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ModuleRecordsApi, TwinbinApi, ApiError, apiFetch } from "@lib/apiClient";
-import { StatsCard, RecordsTable, StatusBadge, ActionButtons, TableColumn } from "../../qc-shared";
+import { StatsCard, RecordsTable, StatusBadge, ActionButtons, TableColumn, FilterTabs } from "../../qc-shared";
 
 type RecordItem = {
     id: string;
@@ -286,11 +286,15 @@ export default function QCDashboard() {
                         <h2 className="text-lg">Filter by Type</h2>
                         {/* ... */}
                     </div>
-                    <div className="flex gap-2">
-                        <button className={`btn btn-sm ${filterType === 'ALL' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilterType('ALL')}>All</button>
-                        <button className={`btn btn-sm ${filterType === 'BIN_REQUEST' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilterType('BIN_REQUEST')}>Bin Requests</button>
-                        <button className={`btn btn-sm ${filterType === 'DAILY_REPORT' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilterType('DAILY_REPORT')}>Daily Reports</button>
-                    </div>
+                    <FilterTabs
+                        tabs={[
+                            { id: 'ALL', label: 'All' },
+                            { id: 'BIN_REQUEST', label: 'Bin Requests' },
+                            { id: 'DAILY_REPORT', label: 'Daily Reports' }
+                        ]}
+                        activeTab={filterType}
+                        onChange={(id) => setFilterType(id)}
+                    />
                 </div>
                 {/* ... date inputs ... */}
                 {filterType === 'DAILY_REPORT' && (

@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, Alert, SafeAreaView } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, Alert, SafeAreaView, Modal, TextInput, KeyboardAvoidingView, Platform } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../../../navigation/types";
 import { ToiletApi } from "../../../api/modules";
+import { ChevronLeft, User, Clock, MapPin, AlertTriangle, CheckCircle2, XCircle, FileText, Send } from "lucide-react-native";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ToiletReview">;
 
@@ -19,194 +20,233 @@ export default function ToiletReviewScreen({ route, navigation }: Props) {
     const { inspection } = route.params;
     const [submitting, setSubmitting] = useState(false);
 
-    // Calculate distance between reported location and toilet master location
+    // Rejection Modal State
+    const [rejectModalVisible, setRejectModalVisible] = useState(false);
+    const [rejectReason, setRejectReason] = useState("");
+
+    // Calculate distance
     const reportedDist = inspection.latitude && inspection.longitude && inspection.toilet.latitude && inspection.toilet.longitude
         ? getDistance(inspection.latitude, inspection.longitude, inspection.toilet.latitude, inspection.toilet.longitude) * 1000 // meters
         : null;
 
-    const handleDecision = async (status: "APPROVED" | "REJECTED") => {
-        if (status === "REJECTED") {
-            Alert.prompt(
-                "Mandatory Reason",
-                "Explain why this inspection is being rejected",
-                [
-                    { text: "Cancel", style: "cancel" },
-                    {
-                        text: "Confirm Reject",
-                        style: "destructive",
-                        onPress: async (text: string | undefined) => {
-                            if (!text || text.trim().length === 0) {
-                                Alert.alert("Required", "Reason is mandatory for rejection.");
-                                return;
-                            }
-                            submitDecision(status, text);
-                        }
-                    }
-                ]
-            );
-        } else {
-            Alert.alert(
-                "Final Approval",
-                "Approve this inspection? This will update the compliance reports.",
-                [
-                    { text: "Cancel", style: "cancel" },
-                    { text: "Confirm Approve", onPress: () => submitDecision(status) }
-                ]
-            );
+    const handleApprove = () => {
+        Alert.alert(
+            "Confirm Approval",
+            "Are you sure you want to approve this inspection?",
+            [
+                { text: "Cancel", style: "cancel" },
+                { text: "Approve", onPress: () => submitDecision("APPROVED") }
+            ]
+        );
+    };
+
+    const handleReject = () => {
+        setRejectModalVisible(true);
+    };
+
+    const submitReject = () => {
+        if (!rejectReason.trim()) {
+            Alert.alert("Required", "Please provide a reason for rejection.");
+            return;
         }
+        setRejectModalVisible(false);
+        submitDecision("REJECTED", rejectReason);
     };
 
     const submitDecision = async (status: "APPROVED" | "REJECTED", remarks?: string) => {
         setSubmitting(true);
         try {
             await ToiletApi.updateInspection(inspection.id, { status, remarks });
-            Alert.alert("Success", `Report ${status.toLowerCase()}.`);
+            Alert.alert("Success", `Inspection ${status === 'APPROVED' ? 'Approved' : 'Rejected'}`);
             navigation.goBack();
         } catch (err: any) {
             Alert.alert("Error", err.message || "Action failed.");
-        } finally {
             setSubmitting(false);
         }
     };
 
     return (
         <SafeAreaView style={styles.container}>
+            {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}><Text style={styles.backBtn}>←</Text></TouchableOpacity>
-                <View style={{ flex: 1, marginLeft: 15 }}>
-                    <Text style={styles.title}>{inspection.toilet.name}</Text>
-                    <Text style={styles.subtitle}>QC QUALITY AUDIT</Text>
+                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+                    <ChevronLeft size={24} color="#1e293b" />
+                </TouchableOpacity>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={styles.title} numberOfLines={1}>{inspection.toilet.name}</Text>
+                    <Text style={styles.subtitle}>QC INSPECTION REVIEW</Text>
                 </View>
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: 16 }}>
-                <View style={styles.geoBox}>
-                    <View style={{ flex: 1 }}>
-                        <Text style={styles.label}>INSPECTOR</Text>
-                        <Text style={styles.val}>{inspection.employee.name}</Text>
+            <ScrollView contentContainerStyle={styles.content}>
+                {/* Meta Info Card */}
+                <View style={styles.metaCard}>
+                    <View style={styles.metaRow}>
+                        <User size={14} color="#64748b" />
+                        <Text style={styles.metaLabel}>Inspector:</Text>
+                        <Text style={styles.metaValue}>{inspection.employee.name}</Text>
                     </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={styles.label}>SUBMISSION</Text>
-                        <Text style={styles.val}>{new Date(inspection.createdAt).toLocaleTimeString()}</Text>
+                    <View style={styles.metaRow}>
+                        <Clock size={14} color="#64748b" />
+                        <Text style={styles.metaLabel}>Time:</Text>
+                        <Text style={styles.metaValue}>{new Date(inspection.createdAt).toLocaleString()}</Text>
                     </View>
-                </View>
+                    <View style={styles.divider} />
 
-                {/* QC Comment for Action Officer */}
-                {inspection.qcComment && (
-                    <View style={styles.qcCommentCard}>
-                        <View style={styles.qcHeader}>
-                            <Text style={styles.qcTitle}>QC INSTRUCTIONS</Text>
-                            <Text style={styles.qcBadge}>ACTION REQUIRED</Text>
-                        </View>
-                        <Text style={styles.qcText}>{inspection.qcComment}</Text>
-                    </View>
-                )}
-
-                {/* Accuracy Alert */}
-                <View style={[styles.mismatchCard, (reportedDist && reportedDist > 100) ? { backgroundColor: '#fff7ed', borderColor: '#fdba74' } : {}]}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={{ fontSize: 16 }}>📍</Text>
-                        <Text style={styles.mismatchText}>
-                            {reportedDist !== null
-                                ? `Accuracy: ${reportedDist.toFixed(0)}m from toilet`
-                                : "GPS Data Missing"
-                            }
+                    {/* Location Integrity */}
+                    <View style={styles.metaRow}>
+                        <MapPin size={14} color={reportedDist && reportedDist > 100 ? "#ea580c" : "#16a34a"} />
+                        <Text style={styles.metaLabel}>Location Accuracy:</Text>
+                        <Text style={[styles.metaValue, { color: reportedDist && reportedDist > 100 ? "#ea580c" : "#16a34a" }]}>
+                            {reportedDist !== null ? `${reportedDist.toFixed(0)}m deviation` : "N/A"}
                         </Text>
                     </View>
                     {reportedDist && reportedDist > 100 && (
-                        <Text style={{ fontSize: 10, fontWeight: '800', color: '#ea580c', marginTop: 8 }}>⚠️ HIGH MISMATCH - PLEASE VERIFY CAREFULLY</Text>
+                        <View style={styles.warningBox}>
+                            <AlertTriangle size={12} color="#c2410c" />
+                            <Text style={styles.warningText}>High location mismatch. Verify photos carefully.</Text>
+                        </View>
                     )}
                 </View>
 
-                <Text style={styles.sectionTitle}>FIELD RESULTS</Text>
+                <Text style={styles.sectionHeader}>INSPECTION DETAILS</Text>
+
                 {Object.entries(inspection.answers || {}).map(([questionText, data]: [string, any], idx: number) => (
-                    <View key={idx} style={styles.ansCard}>
-                        <View style={styles.ansRow}>
-                            <Text style={styles.ansText}>{questionText}</Text>
-                            <Text style={[styles.badge, (data.answer === "YES" || data.answer === "Continuous") ? styles.badgeYes : styles.badgeNo]}>
-                                {String(data.answer).toUpperCase()}
-                            </Text>
+                    <View key={idx} style={styles.qCard}>
+                        <View style={styles.qHeader}>
+                            <Text style={styles.qText}>{questionText}</Text>
+                            <View style={[styles.badge, (data.answer === "YES" || data.answer === "Continuous") ? styles.badgeSuccess : styles.badgeDestructive]}>
+                                {data.answer === "YES" ? <CheckCircle2 size={10} color="#166534" style={{ marginRight: 4 }} /> : <XCircle size={10} color="#991b1b" style={{ marginRight: 4 }} />}
+                                <Text style={[styles.badgeText, (data.answer === "YES" || data.answer === "Continuous") ? styles.textSuccess : styles.textDestructive]}>
+                                    {String(data.answer).toUpperCase()}
+                                </Text>
+                            </View>
                         </View>
 
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoList}>
-                            {(data.photos || []).map((photo: string, pIdx: number) => (
-                                <View key={pIdx} style={styles.photoWrap}>
-                                    <Image source={{ uri: photo }} style={styles.photo} />
-                                </View>
-                            ))}
-                        </ScrollView>
+                        {(data.photos || []).length > 0 && (
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoScroll}>
+                                {data.photos.map((photo: string, pIdx: number) => (
+                                    <View key={pIdx} style={styles.photoContainer}>
+                                        <Image source={{ uri: photo }} style={styles.photo} />
+                                    </View>
+                                ))}
+                            </ScrollView>
+                        )}
                     </View>
                 ))}
 
-                <View style={{ height: 120 }} />
+                <View style={{ height: 100 }} />
             </ScrollView>
 
+            {/* Footer Actions */}
             <View style={styles.footer}>
                 {submitting ? (
-                    <ActivityIndicator color="#1d4ed8" />
+                    <ActivityIndicator color="#2563eb" />
                 ) : (
-                    <View style={styles.btnRow}>
-                        <TouchableOpacity
-                            style={[styles.btn, styles.btnReject]}
-                            onPress={() => handleDecision("REJECTED")}
-                        >
-                            <Text style={[styles.btnText, { color: '#991b1b' }]}>REJECT</Text>
+                    <View style={styles.actionRow}>
+                        <TouchableOpacity style={[styles.btn, styles.btnReject]} onPress={handleReject}>
+                            <XCircle size={18} color="#dc2626" style={{ marginRight: 8 }} />
+                            <Text style={styles.btnRejectText}>REJECT</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.btn, styles.btnApprove]}
-                            onPress={() => handleDecision("APPROVED")}
-                        >
-                            <Text style={[styles.btnText, { color: '#fff' }]}>APPROVE</Text>
+                        <TouchableOpacity style={[styles.btn, styles.btnApprove]} onPress={handleApprove}>
+                            <CheckCircle2 size={18} color="#fff" style={{ marginRight: 8 }} />
+                            <Text style={styles.btnApproveText}>APPROVE</Text>
                         </TouchableOpacity>
                     </View>
                 )}
             </View>
+
+            {/* Rejection Modal */}
+            <Modal
+                transparent={true}
+                visible={rejectModalVisible}
+                animationType="slide"
+                onRequestClose={() => setRejectModalVisible(false)}
+            >
+                <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <AlertTriangle size={24} color="#dc2626" />
+                            <Text style={styles.modalTitle}>Reject Inspection</Text>
+                        </View>
+                        <Text style={styles.modalSub}>Please provide a reason for rejecting this inspection. This will be sent to the inspector.</Text>
+
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Type rejection reason..."
+                            multiline
+                            numberOfLines={4}
+                            value={rejectReason}
+                            onChangeText={setRejectReason}
+                        />
+
+                        <View style={styles.modalActions}>
+                            <TouchableOpacity style={styles.modalBtnCancel} onPress={() => setRejectModalVisible(false)}>
+                                <Text style={styles.modalBtnCancelText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.modalBtnConfirm} onPress={submitReject}>
+                                <Text style={styles.modalBtnConfirmText}>Confirm Rejection</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </KeyboardAvoidingView>
+            </Modal>
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: "#fff" },
-    header: { padding: 16, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-    backBtn: { fontSize: 24, color: '#1e293b', fontWeight: '700' },
-    title: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
-    subtitle: { fontSize: 10, color: '#1d4ed8', fontWeight: '900', letterSpacing: 1.5 },
-    geoBox: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12, backgroundColor: '#f8fafc', padding: 16, borderRadius: 12 },
-    label: { fontSize: 9, color: '#94a3b8', fontWeight: '800', letterSpacing: 1 },
-    val: { fontSize: 14, fontWeight: '800', color: '#0f172a', marginTop: 2 },
-    qcCommentCard: {
-        backgroundColor: '#fff7ed',
-        borderRadius: 20,
-        padding: 20,
-        marginBottom: 20,
-        borderWidth: 1,
-        borderColor: '#ffedd5',
-        elevation: 2,
-        shadowColor: '#f97316',
-        shadowOpacity: 0.1,
-        shadowRadius: 10
-    },
-    qcHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-    qcTitle: { fontSize: 10, fontWeight: '900', color: '#9a3412', letterSpacing: 1 },
-    qcBadge: { fontSize: 9, fontWeight: '900', color: '#fff', backgroundColor: '#f97316', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
-    qcText: { fontSize: 14, color: '#451a03', fontWeight: '600', lineHeight: 20 },
-    mismatchCard: { padding: 16, borderRadius: 20, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 24 },
-    mismatchText: { fontSize: 13, fontWeight: '800', color: '#334155' },
-    sectionTitle: { fontSize: 11, fontWeight: '900', color: '#94a3b8', marginBottom: 16, letterSpacing: 2 },
-    ansCard: { marginBottom: 24, borderBottomWidth: 1, borderBottomColor: '#f8fafc', paddingBottom: 16 },
-    ansRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-    ansText: { fontSize: 15, fontWeight: '700', color: '#1e293b', flex: 1, marginRight: 15 },
-    badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, fontSize: 10, fontWeight: '900', overflow: 'hidden' },
-    badgeYes: { backgroundColor: '#dcfce7', color: '#166534' },
-    badgeNo: { backgroundColor: '#fee2e2', color: '#991b1b' },
-    photoList: { marginTop: 4 },
-    photoWrap: { width: 120, height: 160, borderRadius: 12, marginRight: 12, backgroundColor: '#f1f5f9', overflow: 'hidden' },
-    photo: { width: '100%', height: '100%' },
-    footer: { padding: 20, borderTopWidth: 1, borderTopColor: '#f1f5f9', position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff' },
-    btnRow: { flexDirection: 'row', gap: 12 },
-    btn: { flex: 1, padding: 18, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-    btnReject: { backgroundColor: '#fef2f2', borderWidth: 2, borderColor: '#fee2e2' },
-    btnAction: { backgroundColor: '#fefce8', borderWidth: 2, borderColor: '#fef08a' },
-    btnApprove: { backgroundColor: '#1d4ed8' },
-    btnText: { fontWeight: '900', fontSize: 13, letterSpacing: 0.5 },
+    container: { flex: 1, backgroundColor: "#f8fafc" },
+    header: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+    backBtn: { padding: 4 },
+    title: { fontSize: 16, fontWeight: '800', color: '#0f172a' },
+    subtitle: { fontSize: 10, fontWeight: '700', color: '#64748b', marginTop: 2 },
+    content: { padding: 16 },
+
+    // Meta Card
+    metaCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#f1f5f9', shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 5, elevation: 1 },
+    metaRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+    metaLabel: { fontSize: 12, color: '#64748b', fontWeight: '600', marginLeft: 8, marginRight: 4 },
+    metaValue: { fontSize: 12, color: '#0f172a', fontWeight: '700', flex: 1 },
+    divider: { height: 1, backgroundColor: '#f1f5f9', marginVertical: 8 },
+    warningBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff7ed', padding: 10, borderRadius: 8, marginTop: 8, gap: 8 },
+    warningText: { fontSize: 11, color: '#c2410c', fontWeight: '600', flex: 1 },
+
+    sectionHeader: { fontSize: 11, fontWeight: '800', color: '#94a3b8', letterSpacing: 1, marginBottom: 12, marginLeft: 4 },
+
+    // Question Card
+    qCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#f1f5f9' },
+    qHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+    qText: { fontSize: 14, fontWeight: '600', color: '#334155', flex: 1, marginRight: 12 },
+    badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+    badgeSuccess: { backgroundColor: '#f0fdf4' },
+    badgeDestructive: { backgroundColor: '#fef2f2' },
+    badgeText: { fontSize: 10, fontWeight: '800' },
+    textSuccess: { color: '#166534' },
+    textDestructive: { color: '#991b1b' },
+    photoScroll: { marginTop: 8 },
+    photoContainer: { marginRight: 8, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#e2e8f0' },
+    photo: { width: 100, height: 100 },
+
+    // Footer
+    footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', padding: 16, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+    actionRow: { flexDirection: 'row', gap: 12 },
+    btn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, borderRadius: 12 },
+    btnReject: { backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fee2e2' },
+    btnApprove: { backgroundColor: '#2563eb' },
+    btnRejectText: { color: '#dc2626', fontWeight: '800', fontSize: 14 },
+    btnApproveText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+
+    // Modal
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+    modalContent: { width: '100%', backgroundColor: '#fff', borderRadius: 24, padding: 24 },
+    modalHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+    modalTitle: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
+    modalSub: { fontSize: 13, color: '#64748b', marginBottom: 20 },
+    input: { backgroundColor: '#f8fafc', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', padding: 16, height: 100, textAlignVertical: 'top', marginBottom: 20 },
+    modalActions: { flexDirection: 'row', gap: 12 },
+    modalBtnCancel: { flex: 1, padding: 16, alignItems: 'center', borderRadius: 12, backgroundColor: '#f1f5f9' },
+    modalBtnConfirm: { flex: 1, padding: 16, alignItems: 'center', borderRadius: 12, backgroundColor: '#dc2626' },
+    modalBtnCancelText: { fontWeight: '700', color: '#64748b' },
+    modalBtnConfirmText: { fontWeight: '700', color: '#fff' }
 });

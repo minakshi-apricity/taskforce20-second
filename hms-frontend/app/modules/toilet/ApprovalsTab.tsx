@@ -1,73 +1,98 @@
 import { useEffect, useState } from "react";
-import { ToiletApi } from "@lib/apiClient";
+import { ToiletApi, GeoApi } from "@lib/apiClient";
 import { useAuth } from "@hooks/useAuth";
+import { FilterTabs } from "../qc-shared";
 
 export default function ApprovalsTab() {
     const { user } = useAuth();
-    const [pendingActions, setPendingActions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState<'PENDING' | 'COMPLETED'>('PENDING');
+    const [items, setItems] = useState<any[]>([]);
     const [selectedRequest, setSelectedRequest] = useState<any>(null);
+    const [wardMap, setWardMap] = useState<Record<string, { name: string, zoneName?: string }>>({});
 
     useEffect(() => {
-        loadPending();
-    }, [user]);
+        loadData();
+    }, [user, activeTab]);
 
-    const loadPending = async () => {
+    // Pre-fetch ward names for better display
+    useEffect(() => {
+        GeoApi.list("WARD").then(res => {
+            const mapping: any = {};
+            res.nodes.forEach((n: any) => {
+                mapping[n.id] = { name: n.name, zoneName: n.parent?.name };
+            });
+            setWardMap(mapping);
+        }).catch(() => { });
+    }, []);
+
+    const loadData = async () => {
         if (!user) return;
         setLoading(true);
         try {
-            const actions: any[] = [];
+            const allItems: any[] = [];
 
-            // 1. Fetch Pending Toilets (for QC and CITY_ADMIN)
-            try {
-                if (user.roles.includes('QC') || user.roles.includes('CITY_ADMIN') || user.roles.includes('HMS_SUPER_ADMIN')) {
+            const isQC = user.roles.includes('QC') || user.roles.includes('HMS_SUPER_ADMIN');
+            const isCityAdmin = user.roles.includes('CITY_ADMIN');
+            const isAO = user.roles.includes('ACTION_OFFICER');
+
+            // 1. Toilets (Registrations)
+            if (isQC || isCityAdmin) {
+                if (activeTab === 'PENDING') {
                     const res = await ToiletApi.listPendingToilets();
-                    const toilets = (res.toilets || []).map((t: any) => ({ ...t, _type: 'REGISTRATION' }));
-                    actions.push(...toilets);
+                    allItems.push(...(res.toilets || []).map((t: any) => ({ ...t, _type: 'REGISTRATION' })));
+                } else {
+                    // For completed, we try to fetch all and filter
+                    // Note: This fetches assigned toilets. Rejected ones might be missing if API doesn't return them.
+                    try {
+                        const res = await ToiletApi.listAllToilets();
+                        const completed = (res.toilets || []).filter((t: any) => t.status !== 'PENDING').map((t: any) => ({ ...t, _type: 'REGISTRATION' }));
+                        allItems.push(...completed);
+                    } catch (e) { console.error("Error fetching toilet history", e); }
                 }
-            } catch (e) {
-                console.error("Failed to fetch pending toilets:", e);
             }
 
-            // 2. Fetch Submitted Inspections (for QC and CITY_ADMIN)
-            try {
-                if (user.roles.includes('QC') || user.roles.includes('CITY_ADMIN') || user.roles.includes('HMS_SUPER_ADMIN')) {
-                    // Fetch ALL and filter client-side to ensure no query param issues
+            // 2. Inspections
+            if (isQC || isCityAdmin || isAO) {
+                try {
                     const res = await ToiletApi.listInspections();
-                    const allInspections = res.inspections || [];
-                    const submitted = allInspections.filter((i: any) => i.status === 'SUBMITTED');
+                    // Client-side filtering as API returns paginated but usually sufficient for recent tasks
+                    let inspections = res.inspections || [];
 
-                    const enriched = submitted.map((i: any) => ({ ...i, _type: 'INSPECTION' }));
-                    actions.push(...enriched);
-                }
-            } catch (e) {
-                console.error("Failed to fetch submitted inspections:", e);
+                    if (activeTab === 'PENDING') {
+                        if (isAO && !isQC) { // Pure AO
+                            inspections = inspections.filter((i: any) => i.status === 'ACTION_REQUIRED');
+                        } else {
+                            // QC / Admin sees SUBMITTED. AO also sees ACTION_REQUIRED? 
+                            // If user is both QC and AO, they see everything needing action.
+                            const statusesRaw: string[] = [];
+                            if (isQC || isCityAdmin) statusesRaw.push('SUBMITTED');
+                            if (isAO) statusesRaw.push('ACTION_REQUIRED');
+                            inspections = inspections.filter((i: any) => statusesRaw.includes(i.status));
+                        }
+                    } else {
+                        // Completed
+                        const statusesRaw = ['APPROVED', 'REJECTED', 'ACTION_TAKEN'];
+                        if (isAO && !isQC) {
+                            // AO sees items that were Action Required but now resolved
+                            // Or items they acted on.
+                        }
+                        inspections = inspections.filter((i: any) => statusesRaw.includes(i.status) || (isAO && i.actionTakenById));
+                    }
+
+                    allItems.push(...inspections.map((i: any) => ({ ...i, _type: 'INSPECTION' })));
+                } catch (e) { console.error("Error fetching inspections", e); }
             }
 
-            // 3. Fetch Action Required Inspections (for ACTION_OFFICER)
-            try {
-                if (user.roles.includes('ACTION_OFFICER') || user.roles.includes('CITY_ADMIN') || user.roles.includes('HMS_SUPER_ADMIN')) {
-                    // We can reuse the same list logic if optimized, but for now duplicate to be safe
-                    const res = await ToiletApi.listInspections();
-                    const allInspections = res.inspections || [];
-                    const actionRequired = allInspections.filter((i: any) => i.status === 'ACTION_REQUIRED');
+            // Sort by Date Desc
+            allItems.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-                    const enriched = actionRequired.map((i: any) => ({ ...i, _type: 'INSPECTION' }));
-                    actions.push(...enriched);
-                }
-            } catch (e) {
-                console.error("Failed to fetch action required inspections:", e);
-            }
+            // Remove duplicates
+            const unique = allItems.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
+            setItems(unique);
 
-            // Sort by date desc
-            actions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-            // Deduplicate (in case user has multiple roles that fetch overlapping items)
-            const uniqueActions = actions.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
-
-            setPendingActions(uniqueActions);
         } catch (err) {
-            console.error("General error in loadPending:", err);
+            console.error("Failed to load data:", err);
         } finally {
             setLoading(false);
         }
@@ -76,241 +101,281 @@ export default function ApprovalsTab() {
     const handleAction = async (id: string, status: string, isInspection = false) => {
         try {
             if (!isInspection) {
-                if (status === 'APPROVED') await ToiletApi.approveToilet(id);
-                else {
+                if (status === 'APPROVED') {
+                    await ToiletApi.approveToilet(id);
+                } else {
                     const reason = prompt("Enter rejection reason:");
                     if (reason === null) return;
                     await ToiletApi.rejectToilet(id, reason || "Rejected by QC");
                 }
             } else {
-                // Inspection Review
                 let comment = '';
                 if (status === 'ACTION_REQUIRED' || status === 'REJECTED') {
-                    comment = prompt(status === 'ACTION_REQUIRED' ? "Enter instructions for Action Officer:" : "Enter action taken notes (will be sent back to employee):") || '';
+                    comment = prompt(status === 'ACTION_REQUIRED' ? "Enter instructions for Action Officer:" : "Enter action taken notes:") || '';
                     if (comment === null) return;
                 }
+                // For AO 'APPROVED' on Action Required means "No Action Needed" or resolved without note? usually implies resolved.
+                // The API expects 'APPROVED', 'REJECTED' (AO takes action -> REJECTED logic in backend for AO?? wait check backend logic)
+
+                // Backend logic check:
+                // If AO reviews: 
+                //   UpdateData.actionTakenById = userId
+                //   If REJECTED -> update.actionNote = comment
+                //   Must be APPROVED or REJECTED.
+
                 await ToiletApi.reviewInspection(id, { status, comment });
             }
             alert("Action successful");
             setSelectedRequest(null);
-            await loadPending();
+            loadData();
         } catch (err: any) {
             alert(err.message || "Action failed");
         }
     };
 
-    if (loading) return <div style={{ padding: 40, textAlign: 'center' }}>Loading your verification inbox...</div>;
-
     const isRegistration = (req: any) => req._type === 'REGISTRATION';
-    const isInspection = (req: any) => req._type === 'INSPECTION';
+
+    // Helper to get formatted Zone/Ward string
+    const getZoneWard = (req: any) => {
+        const wId = isRegistration(req) ? req.wardId : req.toilet?.wardId;
+        if (!wId) return 'N/A';
+        const info = wardMap[wId];
+        return info ? `${info.zoneName || 'Zone'} / ${info.name}` : 'Loading...';
+    };
+
+    const getSubmittedBy = (req: any) => {
+        return isRegistration(req) ? req.requestedBy?.name : req.employee?.name;
+    };
 
     return (
         <div style={{ display: 'grid', gridTemplateColumns: selectedRequest ? '1fr 450px' : '1fr', gap: 24, transition: 'all 0.3s' }}>
+            {/* Main List */}
             <div className="card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                    <h3 style={{ margin: 0 }}>🔔 Verification & Approvals Inbox</h3>
-                    <span className="badge" style={{ backgroundColor: '#1d4ed8', color: '#fff' }}>
-                        {pendingActions.length} Pending Actions
-                    </span>
+                    <h3 style={{ margin: 0 }}>Tasks Queue</h3>
+                    <FilterTabs
+                        tabs={[
+                            { id: 'PENDING', label: `Pending (${activeTab === 'PENDING' ? items.length : '...'})` },
+                            { id: 'COMPLETED', label: 'Completed' }
+                        ]}
+                        activeTab={activeTab}
+                        onChange={(id) => setActiveTab(id)}
+                    />
                 </div>
 
-                <div className="table-responsive">
-                    <table className="modern-table">
-                        <thead>
-                            <tr>
-                                <th>Type</th>
-                                <th>Asset / Detail</th>
-                                <th>Submitted By</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {pendingActions.map(req => (
-                                <tr
-                                    key={req.id}
-                                    className={selectedRequest?.id === req.id ? 'active-row' : ''}
-                                    onClick={() => setSelectedRequest(req)}
-                                    style={{ cursor: 'pointer' }}
-                                >
-                                    <td>
-                                        <span className={`status-pill ${isRegistration(req) ? 'reg' : 'ins'}`}>
-                                            {isRegistration(req) ? 'REG' : 'INS'}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <div className="font-bold">{isRegistration(req) ? req.name : req.toilet?.name}</div>
-                                        <div className="muted text-xs">{req.toilet?.type || req.type}</div>
-                                    </td>
-                                    <td className="text-sm">{isRegistration(req) ? req.requestedBy?.name : req.employee?.name}</td>
-                                    <td>
-                                        <StatusBadge status={req.status} />
-                                    </td>
-                                    <td>
-                                        <div className="flex gap-1">
-                                            <button className="btn btn-xs btn-primary" onClick={(e) => { e.stopPropagation(); setSelectedRequest(req); }}>Review</button>
-                                            {isInspection(req) && (
-                                                <a href={`/modules/toilet/inspection/${req.id}`} target="_blank" className="btn btn-xs btn-outline" onClick={e => e.stopPropagation()}>📄 Report</a>
-                                            )}
-                                        </div>
-                                    </td>
+                {loading ? (
+                    <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Loading...</div>
+                ) : (
+                    <div className="table-responsive">
+                        <table className="modern-table">
+                            <thead>
+                                <tr>
+                                    <th>Asset Details</th>
+                                    <th>Zone / Ward</th>
+                                    <th>Submitted By</th>
+                                    <th>Status</th>
+                                    <th>Date</th>
+                                    <th style={{ textAlign: 'right' }}>Action</th>
                                 </tr>
-                            ))}
-                            {pendingActions.length === 0 && (
-                                <tr><td colSpan={5} className="text-center py-12 muted">🎉 All clear! No pending requests.</td></tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody>
+                                {items.map(req => (
+                                    <tr
+                                        key={req.id}
+                                        className={selectedRequest?.id === req.id ? 'active-row' : ''}
+                                        onClick={() => setSelectedRequest(req)}
+                                        style={{ cursor: 'pointer' }}
+                                    >
+                                        <td>
+                                            <div style={{ fontWeight: 600, color: '#0f172a' }}>
+                                                {isRegistration(req) ? req.name : req.toilet?.name || 'Unknown Toilet'}
+                                                <span style={{
+                                                    marginLeft: 8,
+                                                    fontSize: 10,
+                                                    padding: '2px 6px',
+                                                    borderRadius: 4,
+                                                    background: isRegistration(req) ? '#dcfce7' : '#eff6ff',
+                                                    color: isRegistration(req) ? '#166534' : '#1e40af',
+                                                    fontWeight: 800
+                                                }}>
+                                                    {isRegistration(req) ? 'REG' : 'INS'}
+                                                </span>
+                                            </div>
+                                            <div style={{ fontSize: 12, color: '#64748b' }}>
+                                                {isRegistration(req) ? req.type : req.toilet?.type}
+                                            </div>
+                                        </td>
+                                        <td style={{ fontSize: 13, color: '#334155' }}>
+                                            {getZoneWard(req)}
+                                        </td>
+                                        <td style={{ fontSize: 13, color: '#334155' }}>
+                                            {getSubmittedBy(req)}
+                                        </td>
+                                        <td>
+                                            <StatusBadge status={req.status} />
+                                        </td>
+                                        <td style={{ fontSize: 13, color: '#64748b' }}>
+                                            {new Date(req.createdAt).toLocaleDateString()} <span style={{ fontSize: 11 }}>{new Date(req.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                        </td>
+                                        <td style={{ textAlign: 'right' }}>
+                                            <div className="flex gap-2 justify-end">
+                                                <button className="btn btn-sm btn-outline" style={{ fontSize: 12, padding: '4px 10px' }}>
+                                                    View
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {items.length === 0 && (
+                                    <tr>
+                                        <td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
+                                            No {activeTab.toLowerCase()} items found in queue.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
 
+            {/* Sidebar Inspector */}
             {selectedRequest && (
-                <div className="card" style={{ borderLeft: '4px solid #1d4ed8', position: 'sticky', top: 20 }}>
+                <div className="card" style={{ borderLeft: '4px solid #2563eb', position: 'sticky', top: 20, maxHeight: 'calc(100vh - 40px)', overflowY: 'auto' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                        <h4 style={{ margin: 0 }}>{isRegistration(selectedRequest) ? 'Registration Details' : 'Inspection Report'}</h4>
+                        <h4 style={{ margin: 0 }}>{isRegistration(selectedRequest) ? 'Registration Request' : 'Inspection Report'}</h4>
                         <button className="btn btn-sm" onClick={() => setSelectedRequest(null)}>✕</button>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                        <div style={{ textAlign: 'center', padding: 12, backgroundColor: '#f8fafc', borderRadius: 12 }}>
-                            <div className="muted small" style={{ marginBottom: 4 }}>REQUEST TYPE</div>
-                            <div style={{ fontWeight: 800, color: '#1d4ed8' }}>
-                                {isRegistration(selectedRequest) ? 'NEW TOILET REGISTRATION' : 'TOILET CLEANLINESS INSPECTION'}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                        {/* Common Header Info */}
+                        <div style={{ padding: 12, backgroundColor: '#f8fafc', borderRadius: 8 }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 4 }}>Submission Details</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+                                <span style={{ color: '#64748b' }}>Submitted By:</span>
+                                <span style={{ fontWeight: 600 }}>{getSubmittedBy(selectedRequest)}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+                                <span style={{ color: '#64748b' }}>Date:</span>
+                                <span>{new Date(selectedRequest.createdAt).toLocaleString()}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+                                <span style={{ color: '#64748b' }}>Location:</span>
+                                <span>{getZoneWard(selectedRequest)}</span>
                             </div>
                         </div>
 
-                        {/* Registration Details */}
+                        {/* Registration Specifics */}
                         {isRegistration(selectedRequest) && (
                             <>
                                 <div>
-                                    <div className="muted small">ASSET INFORMATION</div>
-                                    <div style={{ marginTop: 8 }}>
-                                        <p style={{ marginBottom: 8 }}><strong>Name:</strong> {selectedRequest.name}</p>
-                                        <p style={{ marginBottom: 8 }}><strong>Code:</strong> {selectedRequest.code || 'N/A'}</p>
-                                        <p style={{ marginBottom: 8 }}><strong>Type:</strong> {selectedRequest.type}</p>
-                                        <p style={{ marginBottom: 8 }}><strong>Gender:</strong> {selectedRequest.gender}</p>
-                                        <p style={{ marginBottom: 8 }}><strong>Submitted By:</strong> {selectedRequest.requestedBy?.name}</p>
-                                    </div>
+                                    <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 8 }}>Asset Details</div>
+                                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{selectedRequest.name}</div>
+                                    <div style={{ fontSize: 13, color: '#334155' }}>{selectedRequest.type} • {selectedRequest.gender}</div>
+                                    <div style={{ fontSize: 13, color: '#334155', marginTop: 4 }}>Seats: {selectedRequest.numberOfSeats || 'N/A'}</div>
+                                    {selectedRequest.address && <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>📍 {selectedRequest.address}</div>}
                                 </div>
-                                <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
-                                    {(user?.roles.includes('CITY_ADMIN') || user?.roles.includes('HMS_SUPER_ADMIN')) ? (
-                                        <>
-                                            <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => handleAction(selectedRequest.id, 'APPROVED')}>Approve</button>
-                                            <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => handleAction(selectedRequest.id, 'REJECTED')}>Reject</button>
-                                        </>
+                                <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
+                                    {/* Actions for QC and Admin */}
+                                    {(user?.roles.includes('QC') || user?.roles.includes('CITY_ADMIN') || user?.roles.includes('HMS_SUPER_ADMIN')) ? (
+                                        selectedRequest.status === 'PENDING' ? (
+                                            <div style={{ display: 'flex', gap: 8 }}>
+                                                <button className="btn btn-primary" style={{ flex: 1, backgroundColor: '#10b981', borderColor: '#10b981' }} onClick={() => handleAction(selectedRequest.id, 'APPROVED')}>
+                                                    Approve
+                                                </button>
+                                                <button className="btn btn-primary" style={{ flex: 1, backgroundColor: '#ef4444', borderColor: '#ef4444' }} onClick={() => handleAction(selectedRequest.id, 'REJECTED')}>
+                                                    Reject
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="badge" style={{ width: '100%', textAlign: 'center', backgroundColor: '#f1f5f9', color: '#64748b' }}>
+                                                Status: {selectedRequest.status}
+                                            </div>
+                                        )
                                     ) : (
-                                        <div style={{ width: '100%', padding: 12, backgroundColor: '#f1f5f9', borderRadius: 8, textAlign: 'center', fontSize: 13, color: '#64748b' }}>
-                                            ℹ️ Registration approval is restricted to City Admin.
+                                        <div className="badge" style={{ width: '100%', textAlign: 'center', backgroundColor: '#f1f5f9', color: '#64748b' }}>
+                                            Read Only
                                         </div>
                                     )}
                                 </div>
                             </>
                         )}
 
-                        {/* Inspection Details */}
-                        {isInspection(selectedRequest) && (
+                        {/* Inspection Specifics */}
+                        {!isRegistration(selectedRequest) && (
                             <>
                                 <div>
-                                    <div className="muted small">INSPECTION SUMMARY</div>
-                                    <div style={{ marginTop: 8 }}>
-                                        <p style={{ marginBottom: 8 }}><strong>Toilet:</strong> {selectedRequest.toilet?.name}</p>
-                                        <p style={{ marginBottom: 8 }}><strong>Employee:</strong> {selectedRequest.employee?.name}</p>
-                                        <p style={{ marginBottom: 8 }}><strong>Distance:</strong> {Math.round(selectedRequest.distanceMeters || 0)}m from asset</p>
-
-                                        {/* Audit Trail */}
-                                        <div style={{ marginTop: 16, padding: 12, backgroundColor: '#f0f9ff', borderRadius: 12, border: '1px solid #e0f2fe' }}>
-                                            <div className="muted small font-bold" style={{ marginBottom: 8 }}>AUDIT TRAIL</div>
-                                            {selectedRequest.reviewedByQc && (
-                                                <p style={{ fontSize: 13, marginBottom: 4 }}>
-                                                    🔍 <strong>Reviewed By QC/Admin:</strong> {selectedRequest.reviewedByQc.name}
-                                                </p>
-                                            )}
-                                            {selectedRequest.actionTakenBy && (
-                                                <p style={{ fontSize: 13, marginBottom: 4 }}>
-                                                    ⚠️ <strong>Action Taken By:</strong> {selectedRequest.actionTakenBy.name}
-                                                </p>
-                                            )}
-                                            {selectedRequest.qcComment && (
-                                                <div style={{ marginTop: 8, padding: 8, backgroundColor: '#fff7ed', borderRadius: 6, fontSize: 12, color: '#9a3412' }}>
-                                                    <strong>QC Instructions:</strong> {selectedRequest.qcComment}
-                                                </div>
-                                            )}
-                                            {selectedRequest.actionNote && (
-                                                <div style={{ marginTop: 4, padding: 8, backgroundColor: '#ecfdf5', borderRadius: 6, fontSize: 12, color: '#065f46' }}>
-                                                    <strong>Action Notes:</strong> {selectedRequest.actionNote}
-                                                </div>
-                                            )}
-                                            {!selectedRequest.reviewedByQc && !selectedRequest.actionTakenBy && (
-                                                <p style={{ fontSize: 12, fontStyle: 'italic', color: '#94a3b8' }}>No review audit yet</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <div className="muted small">TOILET INSPECTION QUESTIONS</div>
-                                    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 8 }}>Inspection Report</div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                         {selectedRequest.answers && Object.entries(selectedRequest.answers).map(([qId, val]: [string, any]) => {
-                                            // Handle new answer format `{ answer: '...', photos: [...] }`
                                             const isNewFormat = val && typeof val === 'object' && 'answer' in val;
                                             const displayVal = isNewFormat ? val.answer : val;
-
                                             return (
-                                                <div key={qId} style={{ fontSize: 13, display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid #f1f5f9' }}>
-                                                    <span>{qId}:</span>
-                                                    <span style={{ fontWeight: 600 }}>
+                                                <div key={qId} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, paddingBottom: 6, borderBottom: '1px solid #f8fafc' }}>
+                                                    <span style={{ color: '#334155', maxWidth: '70%' }}>{qId}</span>
+                                                    <span style={{ fontWeight: 700 }}>
                                                         {displayVal === true || displayVal === 'YES' ? '✅ YES' :
-                                                            displayVal === false || displayVal === 'NO' ? '❌ NO' :
-                                                                (typeof displayVal === 'object' ? JSON.stringify(displayVal) : displayVal)}
+                                                            displayVal === false || displayVal === 'NO' ? '❌ NO' : String(displayVal)}
                                                     </span>
                                                 </div>
                                             );
                                         })}
                                     </div>
+                                    <div style={{ marginTop: 12 }}>
+                                        <a href={`/modules/toilet/inspection/${selectedRequest.id}`} target="_blank" className="btn btn-xs btn-outline" style={{ width: '100%' }}>View Full Report Document</a>
+                                    </div>
                                 </div>
 
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-                                    {/* Action Buttons Restricted to QC/AO roles, City Admin only views if purely City Admin */}
-                                    {(user?.roles.includes('QC') || user?.roles.includes('HMS_SUPER_ADMIN')) && selectedRequest.status === 'SUBMITTED' && (
-                                        <>
-                                            <button className="btn btn-primary btn-sm" style={{ flex: '1 0 45%', backgroundColor: '#10b981', borderColor: '#10b981' }} onClick={() => handleAction(selectedRequest.id, 'APPROVED', true)}>✅ Approve</button>
-                                            <button className="btn btn-secondary btn-sm" style={{ flex: '1 0 45%', backgroundColor: '#ef4444', borderColor: '#ef4444', color: 'white' }} onClick={() => handleAction(selectedRequest.id, 'REJECTED', true)}>✕ Reject</button>
-                                            <button className="btn btn-outline btn-sm" style={{ flex: '1 0 100%', borderColor: '#f59e0b', color: '#d97706', marginTop: 8 }} onClick={() => handleAction(selectedRequest.id, 'ACTION_REQUIRED', true)}>⚠️ Action Required</button>
-                                        </>
+                                {/* Audit Trail */}
+                                {(selectedRequest.reviewedByQc || selectedRequest.actionTakenBy) && (
+                                    <div style={{ backgroundColor: '#f0f9ff', padding: 12, borderRadius: 8, fontSize: 13 }}>
+                                        {selectedRequest.qcComment && (
+                                            <div style={{ marginBottom: 8 }}>
+                                                <div style={{ fontWeight: 700, color: '#0369a1' }}>QC Note:</div>
+                                                <div>{selectedRequest.qcComment}</div>
+                                            </div>
+                                        )}
+                                        {selectedRequest.actionNote && (
+                                            <div>
+                                                <div style={{ fontWeight: 700, color: '#15803d' }}>Action Note:</div>
+                                                <div>{selectedRequest.actionNote}</div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
+                                    {/* Actions */}
+                                    {(user?.roles.includes('QC') || user?.roles.includes('CITY_ADMIN') || user?.roles.includes('HMS_SUPER_ADMIN')) && selectedRequest.status === 'SUBMITTED' && (
+                                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                            <button className="btn btn-sm btn-primary" style={{ flex: 1, backgroundColor: '#10b981', borderColor: '#10b981' }} onClick={() => handleAction(selectedRequest.id, 'APPROVED', true)}>Approve</button>
+                                            <button className="btn btn-sm btn-primary" style={{ flex: 1, backgroundColor: '#ef4444', borderColor: '#ef4444' }} onClick={() => handleAction(selectedRequest.id, 'REJECTED', true)}>Reject</button>
+                                            <button className="btn btn-sm btn-outline" style={{ width: '100%', borderColor: '#f59e0b', color: '#d97706' }} onClick={() => handleAction(selectedRequest.id, 'ACTION_REQUIRED', true)}>Action Required</button>
+                                        </div>
                                     )}
 
                                     {user?.roles.includes('ACTION_OFFICER') && selectedRequest.status === 'ACTION_REQUIRED' && (
-                                        <>
-                                            <button className="btn btn-primary btn-sm" style={{ flex: '1 0 45%' }} onClick={() => handleAction(selectedRequest.id, 'APPROVED', true)}>No Action Needed (Approve)</button>
-                                            <button className="btn btn-secondary btn-sm" style={{ flex: '1 0 45%', backgroundColor: '#dc2626' }} onClick={() => handleAction(selectedRequest.id, 'REJECTED', true)}>Action Taken (Resolve)</button>
-                                        </>
-                                    )}
-
-                                    {user?.roles.includes('CITY_ADMIN') && !user?.roles.includes('QC') && !user?.roles.includes('ACTION_OFFICER') && isInspection(selectedRequest) && (
-                                        <div style={{ width: '100%', padding: 12, backgroundColor: '#f1f5f9', borderRadius: 8, textAlign: 'center', fontSize: 13, color: '#64748b' }}>
-                                            ℹ️ Only QC and Action Officers can review inspections.
+                                        <div style={{ display: 'flex', gap: 8 }}>
+                                            <button className="btn btn-sm btn-primary" style={{ flex: 1 }} onClick={() => handleAction(selectedRequest.id, 'APPROVED', true)}>No Issue</button>
+                                            <button className="btn btn-sm btn-secondary" style={{ flex: 1 }} onClick={() => handleAction(selectedRequest.id, 'REJECTED', true)}>Action Taken</button>
                                         </div>
                                     )}
                                 </div>
                             </>
                         )}
+
                     </div>
                 </div>
             )}
 
             <style jsx>{`
                 .table-responsive { overflow-x: auto; }
-                .modern-table { width: 100%; border-collapse: collapse; }
-                .modern-table th { text-align: left; font-size: 11px; font-weight: 900; color: #0f172a; text-transform: uppercase; padding: 12px 8px; border-bottom: 2px solid #f1f5f9; }
-                .modern-table td { padding: 12px 8px; border-bottom: 1px solid #f1f5f9; }
-                .active-row { background-color: #f8fafc; border-left: 4px solid #1d4ed8 !important; }
-                .status-pill { padding: 2px 8px; border-radius: 4px; font-size: 9px; font-weight: 900; }
-                .status-pill.reg { background: #dcfce7; color: #166534; }
-                .status-pill.ins { background: #eff6ff; color: #1e40af; }
-                .badge-submitted { background-color: #dbeafe; color: #1e40af; }
-                .badge-action_required { background-color: #ffedd5; color: #9a3412; }
-                .badge-approved { background-color: #dcfce7; color: #166534; }
-                .badge-rejected { background-color: #fee2e2; color: #991b1b; }
+                .modern-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+                .modern-table th { text-align: left; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; padding: 16px 16px; border-bottom: 1px solid #e2e8f0; }
+                .modern-table td { padding: 16px 16px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+                .active-row { background-color: #eff6ff; }
+                .active-row td { border-bottom-color: #bfdbfe; }
             `}</style>
         </div>
     );
@@ -321,17 +386,20 @@ function StatusBadge({ status }: { status: string }) {
         'APPROVED': { bg: '#dcfce7', text: '#166534' },
         'REJECTED': { bg: '#fee2e2', text: '#991b1b' },
         'SUBMITTED': { bg: '#dbeafe', text: '#1e40af' },
-        'ACTION_REQUIRED': { bg: '#ffedd5', text: '#9a3412' }
+        'ACTION_REQUIRED': { bg: '#ffedd5', text: '#9a3412' },
+        'ACTION_TAKEN': { bg: '#dcfce7', text: '#166534' },
+        'PENDING': { bg: '#f1f5f9', text: '#475569' }
     };
-    const s = config[status] || { bg: '#f1f5f9', text: '#475569' };
+    const s = config[status] || config['PENDING'];
     return (
         <span style={{
-            padding: '4px 10px',
+            padding: '4px 8px',
             borderRadius: 6,
-            fontSize: 10,
-            fontWeight: 800,
+            fontSize: 11,
+            fontWeight: 700,
             backgroundColor: s.bg,
-            color: s.text
+            color: s.text,
+            whiteSpace: 'nowrap'
         }}>
             {status}
         </span>

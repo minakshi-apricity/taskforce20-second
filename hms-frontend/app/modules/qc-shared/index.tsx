@@ -197,29 +197,29 @@ export function RecordsTable<T>({
         <tbody>
           {loading
             ? Array.from({ length: skeletonRows }).map((_, idx) => (
-                <tr key={`skeleton-${idx}`}>
-                  {columns.map((col, cIdx) => (
-                    <td key={col.key + cIdx}>
-                      <div className="skeleton-line" />
-                    </td>
-                  ))}
-                  {renderActions && (
-                    <td>
-                      <div className="skeleton-line short" />
-                    </td>
-                  )}
-                </tr>
-              ))
+              <tr key={`skeleton-${idx}`}>
+                {columns.map((col, cIdx) => (
+                  <td key={col.key + cIdx}>
+                    <div className="skeleton-line" />
+                  </td>
+                ))}
+                {renderActions && (
+                  <td>
+                    <div className="skeleton-line short" />
+                  </td>
+                )}
+              </tr>
+            ))
             : rows.map((row, idx) => (
-                <tr key={idx} onClick={() => onRowClick?.(row)} className={onRowClick ? "clickable" : undefined}>
-                  {columns.map((col) => (
-                    <td key={col.key} className={col.align === "right" ? "text-right" : ""}>
-                      {col.render ? col.render(row) : (row as any)[col.key]}
-                    </td>
-                  ))}
-                  {renderActions && <td className="text-right">{renderActions(row)}</td>}
-                </tr>
-              ))}
+              <tr key={idx} onClick={() => onRowClick?.(row)} className={onRowClick ? "clickable" : undefined}>
+                {columns.map((col) => (
+                  <td key={col.key} className={col.align === "right" ? "text-right" : ""}>
+                    {col.render ? col.render(row) : (row as any)[col.key]}
+                  </td>
+                ))}
+                {renderActions && <td className="text-right">{renderActions(row)}</td>}
+              </tr>
+            ))}
           {!loading && rows.length === 0 && (
             <tr>
               <td colSpan={columns.length + (renderActions ? 1 : 0)} className="empty">
@@ -281,6 +281,50 @@ export function RecordsTable<T>({
           100% {
             background-position: -200% 0;
           }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+export function FilterTabs({ tabs, activeTab, onChange }: { tabs: { id: string; label: string }[]; activeTab: string; onChange: (id: any) => void }) {
+  return (
+    <div className="filter-tabs">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          className={`filter-tab ${activeTab === tab.id ? "active" : ""}`}
+          onClick={() => onChange(tab.id)}
+        >
+          {tab.label}
+        </button>
+      ))}
+      <style jsx>{`
+        .filter-tabs {
+          display: inline-flex;
+          background: #f1f5f9;
+          padding: 4px;
+          border-radius: 999px;
+          gap: 4px;
+        }
+        .filter-tab {
+          padding: 6px 16px;
+          border-radius: 999px;
+          font-size: 13px;
+          font-weight: 600;
+          color: #64748b;
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .filter-tab.active {
+          background: white;
+          color: #0f172a;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .filter-tab:hover:not(.active) {
+          color: #334155;
         }
       `}</style>
     </div>

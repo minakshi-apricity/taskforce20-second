@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ModuleGuard } from "@components/Guards";
 import { TaskforceApi, ApiError } from "@lib/apiClient";
+import { useAuth } from "@hooks/useAuth";
 
 type Case = {
   id: string;
@@ -17,6 +18,7 @@ export default function TaskforceTasksPage() {
   const [cases, setCases] = useState<Case[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const [title, setTitle] = useState("");
   const [geoNodeId, setGeoNodeId] = useState("");
@@ -98,103 +100,514 @@ export default function TaskforceTasksPage() {
     }
   };
 
-  return (
-    <ModuleGuard module="TASKFORCE" roles={["EMPLOYEE", "ACTION_OFFICER", "QC", "CITY_ADMIN", "HMS_SUPER_ADMIN"]}>
-      <div className="grid grid-2">
-        <div className="card">
-          <h3>Create Task</h3>
-          <form onSubmit={createCase} className="form">
-            <label>Title</label>
-            <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} required />
-            <label>Geo Node ID (optional)</label>
-            <input className="input" value={geoNodeId} onChange={(e) => setGeoNodeId(e.target.value)} />
-            <label>Assign To (User ID, optional)</label>
-            <input className="input" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} />
-            <button className="btn btn-primary" type="submit">
-              {saving ? "Saving..." : "Create"}
-            </button>
-            {createStatus && <div className="muted">{createStatus}</div>}
-          </form>
-        </div>
+  // Determine role for UI switching
+  const { user } = useAuth(); // Assuming useAuth is available or we get it from context if not already imported
+  // But wait, useAuth was not imported in the original file, it was using ModuleGuard.
+  // I need to import useAuth. 
+  // checking imports: import { ModuleGuard } from "@components/Guards";
 
-        <div className="card">
-          <h3>Tasks</h3>
-          {loading && <p>Loading...</p>}
-          {error && <p className="alert error">{error}</p>}
-          {!loading && !cases.length && !error && <p>No tasks.</p>}
-          <div className="table-grid">
-            <div className="table-head">
-              <div>Title</div>
-              <div>Status</div>
-              <div>Assignee</div>
-              <div>Geo</div>
-              <div>Actions</div>
+  // I need to add useAuth import. 
+  // Let's modify the imports first.
+
+  const isCityAdmin = user?.roles?.includes("CITY_ADMIN") || user?.roles?.includes("HMS_SUPER_ADMIN");
+
+  // Premium Dashboard for City Admin
+  if (isCityAdmin) {
+    const stats = {
+      total: cases.length,
+      open: cases.filter(c => c.status === 'OPEN').length,
+      inProgress: cases.filter(c => c.status === 'IN_PROGRESS').length,
+      completed: cases.filter(c => c.status === 'COMPLETED').length,
+    };
+
+    // Group by GeoNode as "Zone" proxy
+    const nodeStats = cases.reduce((acc, c) => {
+      const node = c.geoNodeId || "Unassigned";
+      if (!acc[node]) acc[node] = { total: 0, open: 0, completed: 0 };
+      acc[node].total++;
+      if (c.status === 'OPEN' || c.status === 'IN_PROGRESS') acc[node].open++;
+      if (c.status === 'COMPLETED') acc[node].completed++;
+      return acc;
+    }, {} as Record<string, any>);
+
+    return (
+      <ModuleGuard module="TASKFORCE" roles={["CITY_ADMIN", "HMS_SUPER_ADMIN"]}>
+        <div style={{ animation: 'fadeIn 0.5s ease-out', paddingBottom: 40 }}>
+          <style jsx>{`
+                @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+                .stats-compact-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                    gap: 16px;
+                }
+                .section-divider {
+                    height: 1px;
+                    background: #e2e8f0;
+                }
+                .card-header-flex {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 20px;
+                }
+                .section-title {
+                    font-size: 16px;
+                    font-weight: 800;
+                    margin: 0;
+                    color: #0f172a;
+                }
+                .compact-card {
+                    padding: 24px;
+                    background: white;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 12px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+                }
+                .modern-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                }
+                .modern-table th {
+                    text-align: left;
+                    font-size: 11px;
+                    color: #64748b;
+                    padding: 12px 16px;
+                    border-bottom: 2px solid #f1f5f9;
+                    font-weight: 800;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                }
+                .modern-table td {
+                    padding: 16px 16px;
+                    font-size: 14px;
+                    border-bottom: 1px solid #f1f5f9;
+                    vertical-align: middle;
+                }
+                .tab-btn {
+                    padding: 6px 16px;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: 700;
+                    background: transparent;
+                    color: #64748b;
+                    border: none;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                }
+                .tab-btn:hover {
+                    color: #0f172a;
+                    background: #f1f5f9;
+                }
+                .tab-btn.active {
+                    background: #eff6ff;
+                    color: #2563eb;
+                    box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+                }
+            `}</style>
+
+          <header style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <p style={{ fontSize: 13, textTransform: 'uppercase', color: '#64748b', fontWeight: 600, letterSpacing: '0.05em', marginBottom: 8 }}>Module · CTU / GVP Transformation</p>
+              <h1 style={{ fontSize: 32, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em', margin: 0 }}>Task Management</h1>
+              <p style={{ color: '#64748b', marginTop: 8 }}>Track transformation tasks, assignments, and resolution status.</p>
             </div>
-            {cases.map((c) => (
-              <div className="table-row" key={c.id}>
-                <div>
-                  <div style={{ fontWeight: 600 }}>{c.title}</div>
-                  <div className="muted" style={{ fontSize: 12 }}>
-                    {c.id}
-                  </div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <div style={{ background: '#dbeafe', color: '#1e40af', fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 999, border: '1px solid #bfdbfe' }}>
+                City Admin View
+              </div>
+              <button className="btn btn-primary" onClick={() => setShowCreateModal(true)} style={{ borderRadius: 8, fontWeight: 700 }}>
+                + New Task
+              </button>
+            </div>
+          </header>
+
+          {/* KPI Cards */}
+          <div className="stats-compact-grid mb-8">
+            <StatCard label="Total Tasks" value={stats.total} sub="All records" color="#3b82f6" />
+            <StatCard label="Open" value={stats.open} sub="Not Started" color="#f59e0b" />
+            <StatCard label="In Progress" value={stats.inProgress} sub="Active Work" color="#8b5cf6" />
+            <StatCard label="Completed" value={stats.completed} sub="Resolved" color="#059669" />
+          </div>
+
+          <div className="grid grid-cols-12 gap-8">
+            {/* GeoNode Breakdown */}
+            <div className="col-span-12 lg:col-span-4">
+              <div className="compact-card">
+                <h2 className="section-title mb-4">Location Breakdown</h2>
+                <table className="modern-table">
+                  <thead>
+                    <tr>
+                      <th>Geo Node</th>
+                      <th style={{ textAlign: 'right' }}>Total</th>
+                      <th style={{ textAlign: 'right' }}>Active</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(nodeStats).map(([name, stat]: any) => (
+                      <tr key={name}>
+                        <td style={{ fontWeight: 600, color: '#334155' }}>{name}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 500, color: '#64748b' }}>{stat.total}</td>
+                        <td style={{ textAlign: 'right', color: '#d97706', fontWeight: 700 }}>{stat.open}</td>
+                      </tr>
+                    ))}
+                    {Object.keys(nodeStats).length === 0 && (
+                      <tr><td colSpan={3} style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>No data available</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Main Table */}
+            <div className="col-span-12 lg:col-span-8">
+              <div className="compact-card">
+                <div className="card-header-flex">
+                  <h2 className="section-title">All Tasks</h2>
                 </div>
-                <div>{c.status}</div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <div>{c.assignedTo || "—"}</div>
-                  <input
-                    className="input"
-                    placeholder="New assignee userId"
-                    value={assigneeByCase[c.id] || ""}
-                    onChange={(e) => setAssigneeByCase((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                  />
-                  <button
-                    className="btn"
-                    type="button"
-                    disabled={updatingCaseId === c.id}
-                    onClick={() => updateStatus(c.id, c.status, assigneeByCase[c.id])}
-                  >
-                    {updatingCaseId === c.id ? "Updating..." : "Update assignee"}
-                  </button>
-                </div>
-                <div>{c.geoNodeId || "—"}</div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <select
-                    className="input"
-                    value={c.status}
-                    disabled={updatingCaseId === c.id}
-                    onChange={(e) => updateStatus(c.id, e.target.value, c.assignedTo)}
-                  >
-                    <option value="OPEN">OPEN</option>
-                    <option value="IN_PROGRESS">IN_PROGRESS</option>
-                    <option value="COMPLETED">COMPLETED</option>
-                  </select>
-                  <textarea
-                    className="input"
-                    placeholder="Add activity note"
-                    value={activityByCase[c.id] || ""}
-                    onChange={(e) => setActivityByCase((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                  />
-                  <button className="btn" type="button" onClick={() => addActivity(c.id)}>
-                    Add activity
-                  </button>
-                  {c.activities && c.activities.length > 0 && (
-                    <details>
-                      <summary>Activity ({c.activities.length})</summary>
-                      <ul>
-                        {c.activities.map((a: any) => (
-                          <li key={a.id}>
-                            <strong>{a.action}</strong> by {a.actorId} • {a.createdAt}
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="modern-table">
+                    <thead>
+                      <tr>
+                        <th>Task</th>
+                        <th>Status</th>
+                        <th>Assignee</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cases.map((c) => (
+                        <tr key={c.id}>
+                          <td>
+                            <div style={{ fontWeight: 700, color: '#0f172a' }}>{c.title}</div>
+                            <div style={{ fontSize: 12, color: '#64748b', marginTop: 2, fontFamily: 'monospace' }}>{c.id.slice(0, 8)}...</div>
+                          </td>
+                          <td>
+                            <StatusBadge status={c.status} />
+                          </td>
+                          <td>
+                            {c.assignedTo ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <div style={{ width: 20, height: 20, borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>
+                                  {c.assignedTo.charAt(0).toUpperCase()}
+                                </div>
+                                <span style={{ fontSize: 13, color: '#334155', fontWeight: 500 }}>{c.assignedTo}</span>
+                              </div>
+                            ) : <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 13 }}>Unassigned</span>}
+                          </td>
+                          <td>
+                            <button className="btn btn-xs btn-ghost" onClick={() => {
+                              setUpdatingCaseId(c.id);
+                              // Simple toggle for demo in new UI
+                              const next = c.status === 'COMPLETED' ? 'OPEN' : 'COMPLETED';
+                              updateStatus(c.id, next);
+                            }}>
+                              Mark {c.status === 'COMPLETED' ? 'Open' : 'Done'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {cases.length === 0 && (
+                        <tr><td colSpan={4} style={{ textAlign: 'center', padding: 48, color: '#94a3b8' }}>No tasks found</td></tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            ))}
+            </div>
           </div>
+
+          {/* Reuse existing modal logic */}
+          {showCreateModal && (
+            <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && setShowCreateModal(false)}>
+              <div className="modal" style={{ maxWidth: 500 }}>
+                <div className="modal-header mb-4">
+                  <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Create New Task</h3>
+                  <button className="btn btn-ghost btn-sm" type="button" onClick={() => setShowCreateModal(false)}>✕</button>
+                </div>
+                <form onSubmit={createCase}>
+                  <div style={{ display: 'grid', gap: 16 }}>
+                    <div className="form-field">
+                      <label>Title</label>
+                      <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} required placeholder="e.g. Clear illegal dumping" />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div className="form-field">
+                        <label>Geo Node ID</label>
+                        <input className="input" value={geoNodeId} onChange={(e) => setGeoNodeId(e.target.value)} placeholder="Optional" />
+                      </div>
+                      <div className="form-field">
+                        <label>Assign User ID</label>
+                        <input className="input" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} placeholder="Optional" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {createStatus && <div className="text-sm mt-4 text-center opacity-70" style={{ color: createStatus.includes('Failed') ? 'var(--danger)' : 'var(--success)' }}>{createStatus}</div>}
+
+                  <div className="modal-footer mt-6" style={{ justifyContent: 'flex-end' }}>
+                    <button className="btn btn-secondary" type="button" onClick={() => setShowCreateModal(false)}>Cancel</button>
+                    <button className="btn btn-primary" type="submit" disabled={saving}>
+                      {saving ? "Creating..." : "Create Task"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
         </div>
+      </ModuleGuard>
+    )
+  }
+
+  // STANDARD VIEW (Original)
+  return (
+    <ModuleGuard module="TASKFORCE" roles={["EMPLOYEE", "ACTION_OFFICER", "QC", "CITY_ADMIN", "HMS_SUPER_ADMIN"]}>
+      <div className="content">
+        <section className="card card-spacious mb-6">
+          <div className="section-header">
+            <div>
+              <p className="eyebrow">Module • CTU / GVP Transformation</p>
+              <h1 className="text-2xl font-bold mb-1">Task Management</h1>
+              <p className="muted text-sm">Create and track transformation tasks and activities.</p>
+            </div>
+            <div className="section-actions">
+              <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
+                + New Task
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="card card-spacious">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-lg font-bold">Active Tasks</h2>
+            <div className="muted text-sm">{cases.length} records found</div>
+          </div>
+
+          {loading && <div className="p-8 text-center muted">Loading tasks...</div>}
+          {error && <div className="alert error mb-4">{error}</div>}
+
+          {!loading && !error && cases.length === 0 && (
+            <div className="p-12 text-center border rounded-lg bg-base-50">
+              <p className="font-semibold text-lg mb-2">No tasks found</p>
+              <p className="muted mb-4">Get started by creating a new transformation task.</p>
+              <button className="btn btn-sm btn-primary" onClick={() => setShowCreateModal(true)}>
+                Create First Task
+              </button>
+            </div>
+          )}
+
+          {!loading && cases.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="table w-full">
+                <thead>
+                  <tr>
+                    <th>Task Details</th>
+                    <th>Status</th>
+                    <th>Assignee</th>
+                    <th>Geo Node</th>
+                    <th>Latest Activity</th>
+                    <th className="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cases.map((c) => (
+                    <tr key={c.id} className="hover">
+                      <td style={{ maxWidth: '240px' }}>
+                        <div className="font-bold truncate" title={c.title}>{c.title}</div>
+                        <div className="text-xs muted font-mono mt-1 opacity-70">{c.id.slice(0, 8)}...</div>
+                      </td>
+                      <td>
+                        <span className={`badge ${c.status === 'COMPLETED' ? 'badge-success' :
+                          c.status === 'IN_PROGRESS' ? 'badge-info' : 'badge-warning'
+                          } badge-sm font-bold`}>
+                          {c.status.replace(/_/g, ' ')}
+                        </span>
+                      </td>
+                      <td className="text-sm">
+                        {c.assignedTo ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-base-300 flex items-center justify-center text-xs font-bold">
+                              {c.assignedTo.charAt(0).toUpperCase()}
+                            </div>
+                            <span>{c.assignedTo}</span>
+                          </div>
+                        ) : <span className="muted italic">Unassigned</span>}
+                      </td>
+                      <td className="text-sm font-mono text-xs">{c.geoNodeId || "—"}</td>
+                      <td className="text-sm muted">
+                        {c.activities && c.activities.length > 0 ? (
+                          <span>
+                            {c.activities[0].action} <span className="text-xs opacity-70">• {new Date(c.activities[0].createdAt).toLocaleDateString()}</span>
+                          </span>
+                        ) : "No activity"}
+                      </td>
+                      <td className="text-right">
+                        <div className="dropdown dropdown-end">
+                          <button tabIndex={0} className="btn btn-ghost btn-xs">Options ▼</button>
+                          <ul tabIndex={0} className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-52 z-10">
+                            <li>
+                              <a onClick={() => {
+                                setUpdatingCaseId(c.id);
+                                updateStatus(c.id, c.status === 'OPEN' ? 'IN_PROGRESS' : 'COMPLETED');
+                              }}>
+                                Mark as {c.status === 'OPEN' ? 'In Progress' : 'Completed'}
+                              </a>
+                            </li>
+                            <li>
+                              <details>
+                                <summary>Assign To</summary>
+                                <div className="p-2">
+                                  <input
+                                    className="input input-sm input-bordered w-full"
+                                    placeholder="User ID"
+                                    onClick={(e) => e.stopPropagation()}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        updateStatus(c.id, c.status, e.currentTarget.value);
+                                        e.currentTarget.value = '';
+                                      }
+                                    }}
+                                  />
+                                </div>
+                              </details>
+                            </li>
+                            <li>
+                              <details>
+                                <summary>Add Note</summary>
+                                <div className="p-2">
+                                  <textarea
+                                    className="textarea textarea-sm textarea-bordered w-full"
+                                    placeholder="Type note..."
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => setActivityByCase(prev => ({ ...prev, [c.id]: e.target.value }))}
+                                    value={activityByCase[c.id] || ''}
+                                  />
+                                  <button
+                                    className="btn btn-xs btn-primary mt-2 w-full"
+                                    onClick={() => addActivity(c.id)}
+                                  >Save Note</button>
+                                </div>
+                              </details>
+                            </li>
+                          </ul>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        {/* Create Modal */}
+        {showCreateModal && (
+          <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && setShowCreateModal(false)}>
+            <div className="modal" style={{ maxWidth: 500 }}>
+              <div className="modal-header mb-4">
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Create New Task</h3>
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setShowCreateModal(false)}>✕</button>
+              </div>
+              <form onSubmit={createCase}>
+                <div style={{ display: 'grid', gap: 16 }}>
+                  <div className="form-field">
+                    <label>Title</label>
+                    <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} required placeholder="e.g. Clear illegal dumping" />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div className="form-field">
+                      <label>Geo Node ID</label>
+                      <input className="input" value={geoNodeId} onChange={(e) => setGeoNodeId(e.target.value)} placeholder="Optional" />
+                    </div>
+                    <div className="form-field">
+                      <label>Assign User ID</label>
+                      <input className="input" value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} placeholder="Optional" />
+                    </div>
+                  </div>
+                </div>
+
+                {createStatus && <div className="text-sm mt-4 text-center opacity-70" style={{ color: createStatus.includes('Failed') ? 'var(--danger)' : 'var(--success)' }}>{createStatus}</div>}
+
+                <div className="modal-footer mt-6" style={{ justifyContent: 'flex-end' }}>
+                  <button className="btn btn-secondary" type="button" onClick={() => setShowCreateModal(false)}>Cancel</button>
+                  <button className="btn btn-primary" type="submit" disabled={saving}>
+                    {saving ? "Creating..." : "Create Task"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </ModuleGuard>
+  );
+}
+
+function StatCard({ label, value, sub, color }: any) {
+  return (
+    <div className="stat-card-compact" style={{ borderLeft: `6px solid ${color}`, position: 'relative', overflow: 'hidden', background: 'white', borderRadius: 8, border: '1px solid #e2e8f0', borderLeftWidth: 6, borderLeftColor: color }}>
+      <div className="stat-label">{label}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <div className="stat-value" style={{ color: '#1e293b' }}>{value}</div>
+      </div>
+      <div className="stat-sub">{sub}</div>
+      <style jsx>{`
+                .stat-card-compact {
+                    padding: 16px 20px;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 4px;
+                    transition: transform 0.2s, box-shadow 0.2s;
+                }
+                .stat-card-compact:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05);
+                }
+                .stat-label {
+                    font-size: 10px;
+                    font-weight: 900;
+                    color: #94a3b8;
+                    letter-spacing: 0.1em;
+                    text-transform: uppercase;
+                }
+                .stat-value {
+                    font-size: 28px;
+                    font-weight: 900;
+                    letter-spacing: -0.02em;
+                }
+                .stat-sub {
+                    font-size: 12px;
+                    color: #64748b;
+                    font-weight: 500;
+                }
+            `}</style>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const config: any = {
+    'COMPLETED': { bg: '#dcfce7', text: '#166534' },
+    'IN_PROGRESS': { bg: '#fef3c7', text: '#b45309' },
+    'OPEN': { bg: '#fee2e2', text: '#991b1b' },
+  };
+  const s = config[status] || { bg: '#f1f5f9', text: '#475569' };
+  return (
+    <span style={{
+      background: s.bg,
+      color: s.text,
+      padding: '4px 10px',
+      borderRadius: 6,
+      fontSize: 10,
+      fontWeight: 800,
+      letterSpacing: '0.05em',
+      textTransform: 'uppercase',
+      display: 'inline-block'
+    }}>
+      {status?.replace(/_/g, " ")}
+    </span>
   );
 }

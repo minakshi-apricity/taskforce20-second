@@ -1,15 +1,23 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, SafeAreaView, StatusBar, RefreshControl, Alert } from "react-native";
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, SafeAreaView, RefreshControl, Alert, Modal, TextInput, KeyboardAvoidingView, Platform, Dimensions } from "react-native";
 import { ToiletApi } from "../../../api/modules";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../../../navigation/types";
+import ToiletLayout from "../components/ToiletLayout";
+import { MapPin, User, Bookmark, Calendar, CheckCircle2, XCircle, AlertTriangle } from "lucide-react-native";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+const { width } = Dimensions.get('window');
 
 export default function ToiletPendingRegistrationScreen({ navigation }: { navigation: Nav }) {
     const [requests, setRequests] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+
+    // Rejection State
+    const [rejectModalVisible, setRejectModalVisible] = useState(false);
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [rejectReason, setRejectReason] = useState("");
 
     const load = async (isRef = false) => {
         if (!isRef) setLoading(true);
@@ -17,6 +25,7 @@ export default function ToiletPendingRegistrationScreen({ navigation }: { naviga
             const res = await ToiletApi.listPendingToilets();
             setRequests(res.toilets || []);
         } catch (e) {
+            console.log(e);
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -25,53 +34,80 @@ export default function ToiletPendingRegistrationScreen({ navigation }: { naviga
 
     useEffect(() => { load(); }, []);
 
-    const handleApprove = (id: string) => {
-        Alert.alert("Confirm", "Approve this registration?", [
+    const confirmApprove = (id: string) => {
+        Alert.alert("Confirm Approval", "Are you sure you want to approve this registration?", [
             { text: "Cancel", style: "cancel" },
-            {
-                text: "Approve", onPress: async () => {
-                    try {
-                        await ToiletApi.approveToilet(id, {});
-                        Alert.alert("Success", "Approved and added to master.");
-                        load();
-                    } catch (e) { Alert.alert("Error", "Approval failed."); }
-                }
-            }
+            { text: "Approve", onPress: () => processApprove(id) }
         ]);
     };
 
-    const handleReject = (id: string) => {
-        Alert.prompt("Reject Request", "Enter reason for rejection", [
-            { text: "Cancel", style: "cancel" },
-            {
-                text: "Reject", style: "destructive", onPress: async (remarks: string | undefined) => {
-                    try {
-                        await ToiletApi.rejectToilet(id, remarks || "");
-                        Alert.alert("Rejected", "Request has been rejected.");
-                        load();
-                    } catch (e) { Alert.alert("Error", "Action failed."); }
-                }
-            }
-        ]);
+    const processApprove = async (id: string) => {
+        try {
+            await ToiletApi.approveToilet(id, {});
+            Alert.alert("Success", "Toilet approved and added to master list.");
+            load(true);
+        } catch (e) {
+            Alert.alert("Error", "Approval failed.");
+        }
+    };
+
+    const initiateReject = (id: string) => {
+        setSelectedId(id);
+        setRejectReason("");
+        setRejectModalVisible(true);
+    };
+
+    const processReject = async () => {
+        if (!processReject || !selectedId) return;
+        if (!rejectReason.trim()) {
+            Alert.alert("Required", "Rejection reason is mandatory.");
+            return;
+        }
+
+        try {
+            await ToiletApi.rejectToilet(selectedId, rejectReason);
+            setRejectModalVisible(false);
+            Alert.alert("Rejected", "Registration request rejected.");
+            load(true);
+        } catch (e) {
+            Alert.alert("Error", "Action failed.");
+        }
     };
 
     const renderItem = ({ item }: { item: any }) => (
         <View style={styles.card}>
             <View style={styles.cardHeader}>
-                <Text style={styles.name}>{item.name}</Text>
-                <Text style={styles.typeTag}>{item.type}</Text>
+                <View style={styles.headerLeft}>
+                    <Text style={styles.name}>{item.name}</Text>
+                    <View style={styles.typeTag}>
+                        <Text style={styles.typeText}>{item.type}</Text>
+                    </View>
+                </View>
+                <Text style={styles.dateText}>{new Date(item.createdAt).toLocaleDateString()}</Text>
             </View>
+
+            <View style={styles.divider} />
+
             <View style={styles.details}>
-                <Text style={styles.detailText}>📍 {item.ward?.name || 'Unknown Ward'}</Text>
-                <Text style={styles.detailText}>👤 Requested by: {item.requestedBy?.name || 'Employee'}</Text>
-                <Text style={styles.detailText}>🚻 {item.gender} | 🪑 {item.numberOfSeats} Seats</Text>
-                <Text style={styles.dateText}>On {new Date(item.createdAt).toLocaleDateString()}</Text>
+                <View style={styles.detailRow}>
+                    <MapPin size={14} color="#64748b" />
+                    <Text style={styles.detailText} numberOfLines={1}>{item.ward?.name || 'Unknown Ward'}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                    <User size={14} color="#64748b" />
+                    <Text style={styles.detailText}>Req by: {item.requestedBy?.name || 'Employee'}</Text>
+                </View>
+                <View style={styles.detailRow}>
+                    <Bookmark size={14} color="#64748b" />
+                    <Text style={styles.detailText}>{item.gender} • {item.numberOfSeats} Seats</Text>
+                </View>
             </View>
+
             <View style={styles.actions}>
-                <TouchableOpacity style={styles.rejBtn} onPress={() => handleReject(item.id)}>
+                <TouchableOpacity style={styles.rejBtn} onPress={() => initiateReject(item.id)}>
                     <Text style={styles.rejBtnText}>REJECT</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.appBtn} onPress={() => handleApprove(item.id)}>
+                <TouchableOpacity style={styles.appBtn} onPress={() => confirmApprove(item.id)}>
                     <Text style={styles.appBtnText}>APPROVE</Text>
                 </TouchableOpacity>
             </View>
@@ -79,55 +115,110 @@ export default function ToiletPendingRegistrationScreen({ navigation }: { naviga
     );
 
     return (
-        <SafeAreaView style={styles.safe}>
-            <StatusBar barStyle="dark-content" />
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}><Text style={styles.backBtn}>←</Text></TouchableOpacity>
-                <Text style={styles.title}>Registration Requests</Text>
-                <View style={{ width: 40 }} />
-            </View>
+        <ToiletLayout
+            title="Registration Requests"
+            subtitle="QC Approval"
+            navigation={navigation}
+            showBack={true}
+        >
+            <SafeAreaView style={styles.safe}>
+                {loading ? (
+                    <View style={styles.center}><ActivityIndicator size="large" color="#2563eb" /></View>
+                ) : (
+                    <FlatList
+                        data={requests}
+                        renderItem={renderItem}
+                        keyExtractor={item => item.id}
+                        contentContainerStyle={styles.list}
+                        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor="#2563eb" />}
+                        ListEmptyComponent={
+                            <View style={styles.empty}>
+                                <Text style={{ fontSize: 40, marginBottom: 10 }}>👍</Text>
+                                <Text style={styles.emptyTitle}>No Pending Requests</Text>
+                                <Text style={styles.emptySub}>All new toilet registrations have been processed.</Text>
+                            </View>
+                        }
+                    />
+                )}
 
-            {loading ? (
-                <View style={styles.center}><ActivityIndicator size="large" color="#1d4ed8" /></View>
-            ) : (
-                <FlatList
-                    data={requests}
-                    renderItem={renderItem}
-                    keyExtractor={item => item.id}
-                    contentContainerStyle={styles.list}
-                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(true); }} />}
-                    ListEmptyComponent={
-                        <View style={styles.empty}>
-                            <Text style={styles.emptyTitle}>No Pending Requests</Text>
-                            <Text style={styles.emptySub}>All registration requests have been processed.</Text>
+                {/* Rejection Modal */}
+                <Modal
+                    transparent={true}
+                    visible={rejectModalVisible}
+                    animationType="fade"
+                    onRequestClose={() => setRejectModalVisible(false)}
+                >
+                    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                            <View style={styles.modalHeader}>
+                                <Text style={styles.modalTitle}>Reject Request</Text>
+                            </View>
+                            <Text style={styles.modalSub}>Reason for rejecting this toilet registration:</Text>
+
+                            <TextInput
+                                style={styles.input}
+                                placeholder="e.g. Duplicate entry, Incorrect location..."
+                                multiline
+                                numberOfLines={3}
+                                value={rejectReason}
+                                onChangeText={setRejectReason}
+                            />
+
+                            <View style={styles.modalActions}>
+                                <TouchableOpacity style={styles.modalBtnCancel} onPress={() => setRejectModalVisible(false)}>
+                                    <Text style={styles.modalBtnCancelText}>Cancel</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.modalBtnConfirm} onPress={processReject}>
+                                    <Text style={styles.modalBtnConfirmText}>Confirm Reject</Text>
+                                </TouchableOpacity>
+                            </View>
                         </View>
-                    }
-                />
-            )}
-        </SafeAreaView>
+                    </KeyboardAvoidingView>
+                </Modal>
+            </SafeAreaView>
+        </ToiletLayout>
     );
 }
 
 const styles = StyleSheet.create({
-    safe: { flex: 1, backgroundColor: "#f1f5f9" },
-    header: { height: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
-    backBtn: { fontSize: 24, fontWeight: '700', color: '#1e293b' },
-    title: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
+    safe: { flex: 1, backgroundColor: "#f8fafc" },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    list: { padding: 16 },
-    card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
-    cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-    name: { fontSize: 16, fontWeight: '800', color: '#1e293b' },
-    typeTag: { fontSize: 9, fontWeight: '900', color: '#1d4ed8', backgroundColor: '#eff6ff', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-    details: { gap: 4 },
-    detailText: { fontSize: 13, color: '#64748b', fontWeight: '600' },
-    dateText: { fontSize: 11, color: '#94a3b8', marginTop: 6, fontWeight: '700' },
-    actions: { flexDirection: 'row', gap: 10, marginTop: 15, borderTopWidth: 1, borderTopColor: '#f1f5f9', paddingTop: 15 },
-    rejBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: '#fee2e2', backgroundColor: '#fef2f2', alignItems: 'center' },
+    list: { padding: 16, paddingBottom: 40 },
+
+    card: { backgroundColor: '#fff', borderRadius: 18, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#f1f5f9', shadowColor: "#64748b", shadowOpacity: 0.08, shadowRadius: 8, elevation: 2 },
+    cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+    headerLeft: { flex: 1, paddingRight: 8 },
+    name: { fontSize: 16, fontWeight: '800', color: '#0f172a', marginBottom: 6 },
+    typeTag: { alignSelf: 'flex-start', backgroundColor: '#eff6ff', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+    typeText: { fontSize: 10, fontWeight: '800', color: '#2563eb' },
+    dateText: { fontSize: 10, fontWeight: '600', color: '#94a3b8' },
+
+    divider: { height: 1, backgroundColor: '#f1f5f9', marginBottom: 12 },
+
+    details: { gap: 8, marginBottom: 16 },
+    detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    detailText: { fontSize: 12, fontWeight: '600', color: '#64748b', flex: 1 },
+
+    actions: { flexDirection: 'row', gap: 12 },
+    rejBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fee2e2' },
     rejBtnText: { color: '#dc2626', fontSize: 11, fontWeight: '900' },
-    appBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, backgroundColor: '#1d4ed8', alignItems: 'center' },
+    appBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, backgroundColor: '#2563eb' },
     appBtnText: { color: '#fff', fontSize: 11, fontWeight: '900' },
+
     empty: { alignItems: 'center', marginTop: 100 },
     emptyTitle: { fontSize: 18, fontWeight: '900', color: '#1e293b' },
-    emptySub: { fontSize: 14, color: '#94a3b8', marginTop: 8, paddingHorizontal: 40, textAlign: 'center' }
+    emptySub: { fontSize: 14, color: '#94a3b8', marginTop: 8 },
+
+    // Modal
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+    modalContent: { width: '100%', backgroundColor: '#fff', borderRadius: 24, padding: 24 },
+    modalHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+    modalTitle: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
+    modalSub: { fontSize: 13, color: '#64748b', marginBottom: 16 },
+    input: { backgroundColor: '#f8fafc', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', padding: 16, height: 80, textAlignVertical: 'top', marginBottom: 20 },
+    modalActions: { flexDirection: 'row', gap: 12 },
+    modalBtnCancel: { flex: 1, padding: 14, alignItems: 'center', borderRadius: 12, backgroundColor: '#f1f5f9' },
+    modalBtnConfirm: { flex: 1, padding: 14, alignItems: 'center', borderRadius: 12, backgroundColor: '#dc2626' },
+    modalBtnCancelText: { fontWeight: '700', color: '#64748b' },
+    modalBtnConfirmText: { fontWeight: '700', color: '#fff' }
 });

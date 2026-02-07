@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { TaskforceApi, ApiError, AuthApi, apiFetch, EmployeesApi } from "@lib/apiClient";
 import { useAuth } from "@hooks/useAuth";
-import { StatsCard, RecordsTable, StatusBadge, ActionButtons, TableColumn } from "../../qc-shared";
+import { StatsCard, RecordsTable, StatusBadge, ActionButtons, TableColumn, FilterTabs } from "../../qc-shared";
 
 type TaskforceRecord = {
     id: string;
@@ -22,7 +22,7 @@ type TaskforceRecord = {
 export default function TaskforceQCDashboard() {
     const { user: authUser } = useAuth();
 
-    const [viewTab, setViewTab] = useState<'dashboard' | 'verification'>('dashboard');
+    const [viewTab, setViewTab] = useState<'dashboard' | 'verification' | 'employees'>('dashboard');
     const [records, setRecords] = useState<TaskforceRecord[]>([]);
     const [loading, setLoading] = useState(true);
     const [page, setPage] = useState(1);
@@ -33,7 +33,11 @@ export default function TaskforceQCDashboard() {
     const [employees, setEmployees] = useState<any[]>([]);
     const [assignSelection, setAssignSelection] = useState<Record<string, string>>({});
     const [selectedRecord, setSelectedRecord] = useState<TaskforceRecord | null>(null);
-    const [showEmployees, setShowEmployees] = useState(false);
+
+    // Employee Tab State
+    const [empSearch, setEmpSearch] = useState("");
+    const [empPage, setEmpPage] = useState(1);
+    const [empLimit] = useState(10); // Rows per page for employees
 
     const [scope, setScope] = useState<{
         zones: string[];
@@ -51,11 +55,18 @@ export default function TaskforceQCDashboard() {
 
     useEffect(() => {
         setPage(1);
+        if (activeTab === 'PENDING') setSelectedRecord(null);
     }, [activeTab]);
 
     useEffect(() => {
-        loadData();
-    }, [activeTab, page]);
+        if (viewTab !== 'employees') {
+            loadData();
+        } else {
+            loadEmployeesOnce();
+        }
+    }, [activeTab, page, viewTab]);
+
+    useEffect(() => setEmpPage(1), [empSearch, viewTab]);
 
     async function resolveScope() {
         try {
@@ -103,17 +114,15 @@ export default function TaskforceQCDashboard() {
 
     async function loadEmployeesOnce() {
         if (employees.length > 0) return;
+        setLoading(true);
         try {
             const empRes = await EmployeesApi.list("TASKFORCE");
             setEmployees(empRes.employees || []);
         } catch (empErr) {
             console.error("Failed to load employees", empErr);
+        } finally {
+            if (viewTab === 'employees') setLoading(false);
         }
-    }
-
-    async function openEmployeesModal() {
-        await loadEmployeesOnce();
-        setShowEmployees(true);
     }
 
     async function loadData() {
@@ -221,6 +230,27 @@ export default function TaskforceQCDashboard() {
         }
     }
 
+    // --- Employee Table Logic ---
+    const filteredEmployees = useMemo(() => {
+        if (!empSearch) return employees;
+        const lower = empSearch.toLowerCase();
+        return employees.filter(e =>
+            e.name?.toLowerCase().includes(lower) ||
+            e.email?.toLowerCase().includes(lower) ||
+            e.phone?.includes(lower)
+        );
+    }, [employees, empSearch]);
+
+    const paginatedEmployees = useMemo(() => {
+        const start = (empPage - 1) * empLimit;
+        return filteredEmployees.slice(start, start + empLimit);
+    }, [filteredEmployees, empPage, empLimit]);
+
+    const totalEmpPages = Math.max(1, Math.ceil(filteredEmployees.length / empLimit));
+    const empStartRow = filteredEmployees.length === 0 ? 0 : ((empPage - 1) * empLimit) + 1;
+    const empEndRow = Math.min(empPage * empLimit, filteredEmployees.length);
+
+    // --- Records Table Columns ---
     const columns: TableColumn<TaskforceRecord>[] = [
         {
             key: 'record',
@@ -315,9 +345,6 @@ export default function TaskforceQCDashboard() {
                         </div>
                     </div>
                     <div className="section-actions">
-                        <button className="btn btn-outline" onClick={openEmployeesModal}>
-                            Employees
-                        </button>
                         <button
                             className={`btn ${viewTab === 'dashboard' ? 'btn-primary' : 'btn-outline'}`}
                             onClick={() => setViewTab('dashboard')}
@@ -330,76 +357,171 @@ export default function TaskforceQCDashboard() {
                         >
                             Verification
                         </button>
+                        <button
+                            className={`btn ${viewTab === 'employees' ? 'btn-primary' : 'btn-outline'}`}
+                            onClick={() => setViewTab('employees')}
+                        >
+                            Employees
+                        </button>
                         <div className="badge badge-warning">QC Access</div>
                     </div>
                 </div>
-                <div className="stats-row">
-                    <StatsCard label="Pending Review" value={derivedStats.pending || 0} sub="Feeder Points" color="#d97706" />
-                    <StatsCard label="Approved" value={derivedStats.approved || 0} sub="Feeder Points" color="#16a34a" />
-                    <StatsCard label="Rejected" value={derivedStats.rejected || 0} sub="Feeder Points" color="#ef4444" />
-                    <StatsCard label="Assigned" value={derivedStats.assigned || 0} sub="Eliminated Feeder Point" color="#6366f1" />
-                    <StatsCard label="Total In Scope" value={derivedStats.total || 0} sub="Partially Eliminated" color="#0f172a" />
-                </div>
+
+                {viewTab !== 'employees' && (
+                    <div className="stats-row">
+                        <StatsCard label="Pending Review" value={derivedStats.pending || 0} sub="Feeder Points" color="#d97706" />
+                        <StatsCard label="Approved" value={derivedStats.approved || 0} sub="Feeder Points" color="#16a34a" />
+                        <StatsCard label="Rejected" value={derivedStats.rejected || 0} sub="Feeder Points" color="#ef4444" />
+                        <StatsCard label="Assigned" value={derivedStats.assigned || 0} sub="Eliminated Feeder Point" color="#6366f1" />
+                        <StatsCard label="Total In Scope" value={derivedStats.total || 0} sub="Partially Eliminated" color="#0f172a" />
+                    </div>
+                )}
             </section>
 
-            <section className="card card-spacious">
-                <div className="flex items-center justify-between mb-4">
-                    <div>
-                        <h2 className="text-lg">Records Review</h2>
-                        <p className="muted text-sm mb-0">Feeder points and reports within your scope.</p>
+            {viewTab === 'employees' ? (
+                <section className="card card-spacious">
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-xl font-bold">Assigned Employees</h2>
+                        <input
+                            type="text"
+                            placeholder="Search employees..."
+                            className="input input-sm input-bordered w-64"
+                            value={empSearch}
+                            onChange={(e) => setEmpSearch(e.target.value)}
+                        />
                     </div>
-                    <div className="flex gap-2">
-                        <button
-                            className={`btn btn-sm ${activeTab === 'PENDING' ? 'btn-primary' : 'btn-ghost'}`}
-                            onClick={() => setActiveTab('PENDING')}
-                        >
-                            Pending
-                        </button>
-                        <button
-                            className={`btn btn-sm ${activeTab === 'APPROVED' ? 'btn-primary' : 'btn-ghost'}`}
-                            onClick={() => setActiveTab('APPROVED')}
-                        >
-                            Approved
-                        </button>
-                        <button
-                            className={`btn btn-sm ${activeTab === 'ASSIGNED' ? 'btn-primary' : 'btn-ghost'}`}
-                            onClick={() => setActiveTab('ASSIGNED')}
-                        >
-                            Assigned
-                        </button>
-                    </div>
-                </div>
 
-                <RecordsTable<TaskforceRecord>
-                    rows={pagedRows}
-                    columns={columns}
-                    loading={loading}
-                    emptyMessage={viewTab === 'verification' ? "All clear! No pending requests." : "No records found"}
-                    renderActions={actionsRenderer}
-                    onRowClick={(r) => setSelectedRecord(r)}
-                />
+                    {loading ? (
+                        <div className="flex justify-center p-8"><span className="loading loading-spinner loading-md"></span></div>
+                    ) : (
+                        <>
+                            <div className="overflow-x-auto">
+                                <table className="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Role</th>
+                                            <th>Contact</th>
+                                            <th>Assigned Zones</th>
+                                            <th>Assigned Wards</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {paginatedEmployees.length === 0 ? (
+                                            <tr><td colSpan={5} className="text-center p-4 muted">No employees found.</td></tr>
+                                        ) : (
+                                            paginatedEmployees.map((e) => (
+                                                <tr key={e.id} className="hover">
+                                                    <td>
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="avatar placeholder">
+                                                                <div className="bg-neutral-focus text-neutral-content rounded-full w-8">
+                                                                    <span className="text-xs">{e.name?.charAt(0).toUpperCase()}</span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="font-bold">{e.name}</div>
+                                                        </div>
+                                                    </td>
+                                                    <td><div className="badge badge-sm badge-ghost">{e.role}</div></td>
+                                                    <td>
+                                                        <div className="flex flex-col text-xs">
+                                                            <span>{e.email}</span>
+                                                            <span className="muted">{e.phone}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <div className="flex flex-wrap gap-1 max-w-xs">
+                                                            {e.zones && e.zones.length > 0 ? (
+                                                                e.zones.map((z: string) => <span key={z} className="badge badge-xs badge-outline">{z}</span>)
+                                                            ) : <span className="muted text-xs">-</span>}
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <div className="flex flex-wrap gap-1 max-w-xs">
+                                                            {e.wards && e.wards.length > 0 ? (
+                                                                e.wards.map((w: string) => <span key={w} className="badge badge-xs badge-outline">{w}</span>)
+                                                            ) : <span className="muted text-xs">-</span>}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
 
-                <div className="p-4 border-t border-base-200 flex items-center justify-between">
-                    <div className="text-sm muted">Showing {startRow} - {endRow} of {totalRecords} records</div>
-                    <div className="join">
-                        <button
-                            className="join-item btn btn-sm"
-                            disabled={page === 1 || loading}
-                            onClick={() => setPage(p => Math.max(1, p - 1))}
-                        >
-                            « Prev
-                        </button>
-                        <button className="join-item btn btn-sm btn-ghost cursor-default">Page {page} of {totalPages}</button>
-                        <button
-                            className="join-item btn btn-sm"
-                            disabled={page >= totalPages || loading}
-                            onClick={() => setPage(p => p + 1)}
-                        >
-                            Next »
-                        </button>
+                            <div className="p-4 border-t border-base-200 flex items-center justify-between mt-auto">
+                                <div className="text-sm muted">Showing {empStartRow} - {empEndRow} of {filteredEmployees.length} records</div>
+                                <div className="join">
+                                    <button
+                                        className="join-item btn btn-sm"
+                                        disabled={empPage === 1}
+                                        onClick={() => setEmpPage(p => Math.max(1, p - 1))}
+                                    >
+                                        « Prev
+                                    </button>
+                                    <button className="join-item btn btn-sm btn-ghost cursor-default">Page {empPage} of {totalEmpPages}</button>
+                                    <button
+                                        className="join-item btn btn-sm"
+                                        disabled={empPage >= totalEmpPages}
+                                        onClick={() => setEmpPage(p => p + 1)}
+                                    >
+                                        Next »
+                                    </button>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </section>
+            ) : (
+                <section className="card card-spacious">
+                    <div className="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 className="text-lg">Records Review</h2>
+                            <p className="muted text-sm mb-0">Feeder points and reports within your scope.</p>
+                        </div>
+                        <FilterTabs
+                            tabs={[
+                                { id: 'PENDING', label: 'Pending' },
+                                { id: 'APPROVED', label: 'Approved' },
+                                { id: 'ASSIGNED', label: 'Assigned' }
+                            ]}
+                            activeTab={activeTab}
+                            onChange={(id) => setActiveTab(id)}
+                        />
                     </div>
-                </div>
-            </section>
+
+                    <RecordsTable<TaskforceRecord>
+                        rows={pagedRows}
+                        columns={columns}
+                        loading={loading}
+                        emptyMessage={viewTab === 'verification' ? "All clear! No pending requests." : "No records found"}
+                        renderActions={actionsRenderer}
+                        onRowClick={(r) => setSelectedRecord(r)}
+                    />
+
+                    <div className="p-4 border-t border-base-200 flex items-center justify-between">
+                        <div className="text-sm muted">Showing {startRow} - {endRow} of {totalRecords} records</div>
+                        <div className="join">
+                            <button
+                                className="join-item btn btn-sm"
+                                disabled={page === 1 || loading}
+                                onClick={() => setPage(p => Math.max(1, p - 1))}
+                            >
+                                « Prev
+                            </button>
+                            <button className="join-item btn btn-sm btn-ghost cursor-default">Page {page} of {totalPages}</button>
+                            <button
+                                className="join-item btn btn-sm"
+                                disabled={page >= totalPages || loading}
+                                onClick={() => setPage(p => p + 1)}
+                            >
+                                Next »
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            )}
 
             {viewTab === 'verification' && selectedRecord && (
                 <section className="card mt-6" style={{ borderLeft: '4px solid #1d4ed8' }}>
@@ -435,44 +557,6 @@ export default function TaskforceQCDashboard() {
                         loading={actionLoading === selectedRecord.id}
                     />
                 </section>
-            )}
-
-            {showEmployees && (
-                <div className="modal modal-open">
-                    <div className="modal-box w-11/12 max-w-4xl">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-bold text-lg">Assigned Employees</h3>
-                            <button className="btn btn-sm" onClick={() => setShowEmployees(false)}>
-                                Close
-                            </button>
-                        </div>
-
-                        {employees.length === 0 ? (
-                            <div className="muted text-sm">No employees found for this module.</div>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="table table-sm">
-                                    <thead>
-                                        <tr>
-                                            <th>Name</th>
-                                            <th>Email</th>
-                                            <th>Modules</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {employees.map((e) => (
-                                            <tr key={e.id}>
-                                                <td>{e.name}</td>
-                                                <td>{e.email}</td>
-                                                <td>{(e.modules || []).map((m: any) => m.name || m.key).join(", ") || "-"}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
-                </div>
             )}
         </div>
     );
