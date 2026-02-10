@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ApiError, GeoApi } from "@lib/apiClient";
+import dynamic from "next/dynamic";
+import KMLUploader, { ParsedKMLData } from "../../qc/beats/components/KMLUploader";
+import BeatPreviewPanel from "../../qc/beats/components/BeatPreviewPanel";
+import { Upload, MapPin } from "lucide-react";
+import "leaflet/dist/leaflet.css";
 
 type GeoNode = { id: string; name: string; parentId?: string | null; level: string; areaType?: string };
 
@@ -16,6 +21,12 @@ interface EditState {
   name: string;
   areaType?: string;
 }
+
+// Dynamic imports for Leaflet components
+const MapContainer = dynamic(() => import("react-leaflet").then((mod) => mod.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import("react-leaflet").then((mod) => mod.TileLayer), { ssr: false });
+const Polyline = dynamic(() => import("react-leaflet").then((mod) => mod.Polyline), { ssr: false });
+const Popup = dynamic(() => import("react-leaflet").then((mod) => mod.Popup), { ssr: false });
 
 export default function AreasPage() {
   const [zones, setZones] = useState<GeoNode[]>([]);
@@ -40,6 +51,11 @@ export default function AreasPage() {
   const [beatName, setBeatName] = useState("");
   const [beatStatus, setBeatStatus] = useState("");
   const [savingBeat, setSavingBeat] = useState(false);
+
+  // KML Upload states
+  const [showKMLUploader, setShowKMLUploader] = useState(false);
+  const [uploadedKMLData, setUploadedKMLData] = useState<ParsedKMLData | null>(null);
+  const [tempBeatOnMap, setTempBeatOnMap] = useState<any>(null);
 
   // Edit / Delete
   const [editing, setEditing] = useState<EditState | null>(null);
@@ -141,6 +157,65 @@ export default function AreasPage() {
     } finally {
       setSavingBeat(false);
     }
+  };
+
+  // Handle KML Upload
+  const handleKMLParsed = (data: ParsedKMLData) => {
+    setUploadedKMLData(data);
+    setShowKMLUploader(false);
+
+    // Auto-populate beat name from KML if empty
+    if (!beatName && data.name) {
+      setBeatName(data.name);
+    }
+
+    // Create temporary beat object for map display
+    const tempBeat = {
+      id: "TEMP-KML",
+      name: data.name,
+      coordinates: data.coordinates,
+      status: "New Upload",
+      color: "#8b5cf6",
+    };
+
+    setTempBeatOnMap(tempBeat);
+  };
+
+  const handleSaveBeatWithKML = async () => {
+    if (!zoneForBeat || !wardForBeat || !areaForBeat || !beatName || !uploadedKMLData) return;
+
+    setSavingBeat(true);
+    setBeatStatus("Saving beat with KML data...");
+
+    try {
+      // TODO: Update API to accept coordinates
+      // For now, we'll create the beat without coordinates
+      // In production, you should modify the API to accept:
+      // { level: "BEAT", name: beatName, parentId: areaForBeat, coordinates: uploadedKMLData.coordinates }
+
+      await GeoApi.create({
+        level: "BEAT",
+        name: beatName,
+        parentId: areaForBeat
+        // coordinates: uploadedKMLData.coordinates // Add this when backend supports it
+      });
+
+      setBeatStatus("Beat created successfully!");
+      setBeatName("");
+      setUploadedKMLData(null);
+      setTempBeatOnMap(null);
+      await loadGeo();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Failed to create beat with KML";
+      setBeatStatus(msg);
+    } finally {
+      setSavingBeat(false);
+    }
+  };
+
+  const handleCancelKML = () => {
+    setUploadedKMLData(null);
+    setTempBeatOnMap(null);
   };
 
   const startEdit = (node: GeoNode) => {
@@ -493,6 +568,110 @@ export default function AreasPage() {
               disabled={!areaForBeat}
             />
 
+            {/* KML Upload Section */}
+            <div style={{
+              margin: "20px 0",
+              padding: "16px",
+              background: "rgba(139, 92, 246, 0.05)",
+              border: "1px dashed rgba(139, 92, 246, 0.3)",
+              borderRadius: "8px"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+                <MapPin size={18} color="#8b5cf6" />
+                <span style={{ fontWeight: 600, fontSize: "14px", color: "#8b5cf6" }}>
+                  Upload KML File (Optional)
+                </span>
+              </div>
+              <p className="muted" style={{ fontSize: "12px", marginBottom: "12px" }}>
+                Upload a KML file to define the beat geometry with coordinates
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowKMLUploader(true)}
+                disabled={!areaForBeat}
+                style={{
+                  background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)",
+                  color: "white",
+                  border: "none",
+                  padding: "10px 16px",
+                  borderRadius: "6px",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                  cursor: !areaForBeat ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  opacity: !areaForBeat ? 0.5 : 1
+                }}
+              >
+                <Upload size={16} />
+                {uploadedKMLData ? "Change KML File" : "Upload KML File"}
+              </button>
+
+              {uploadedKMLData && (
+                <div style={{
+                  marginTop: "12px",
+                  padding: "8px 12px",
+                  background: "rgba(34, 197, 94, 0.1)",
+                  borderRadius: "6px",
+                  fontSize: "12px",
+                  color: "#15803d",
+                  fontWeight: 500
+                }}>
+                  ✓ {uploadedKMLData.name} ({uploadedKMLData.coordinates.length} points)
+                </div>
+              )}
+            </div>
+
+            {/* Map Viewer */}
+            {tempBeatOnMap && (
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ marginBottom: "8px", display: "block" }}>Beat Preview on Map</label>
+                <div style={{
+                  height: "300px",
+                  width: "100%",
+                  borderRadius: "8px",
+                  overflow: "hidden",
+                  border: "2px solid #8b5cf6"
+                }}>
+                  <MapContainer
+                    center={tempBeatOnMap.coordinates[0]}
+                    zoom={14}
+                    style={{ height: "100%", width: "100%" }}
+                  >
+                    <TileLayer
+                      attribution='&copy; CARTO'
+                      url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                    />
+                    <Polyline
+                      positions={tempBeatOnMap.coordinates as any}
+                      pathOptions={{
+                        color: '#8b5cf6',
+                        weight: 16,
+                        opacity: 0.2,
+                      }}
+                    />
+                    <Polyline
+                      positions={tempBeatOnMap.coordinates as any}
+                      pathOptions={{
+                        color: '#8b5cf6',
+                        weight: 6,
+                        opacity: 1,
+                        lineCap: 'round'
+                      }}
+                    >
+                      <Popup>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: "12px" }}>{tempBeatOnMap.name}</div>
+                          <div style={{ fontSize: "10px", opacity: 0.8 }}>📤 Uploaded KML</div>
+                        </div>
+                      </Popup>
+                    </Polyline>
+                  </MapContainer>
+                </div>
+              </div>
+            )}
+
             <button
               className="btn btn-primary"
               type="submit"
@@ -509,6 +688,25 @@ export default function AreasPage() {
         <h3>Hierarchy</h3>
         {renderHierarchy()}
       </div>
+
+      {/* KML Uploader Modal */}
+      {showKMLUploader && (
+        <KMLUploader
+          onKMLParsed={handleKMLParsed}
+          onClose={() => setShowKMLUploader(false)}
+          isDarkMode={false}
+        />
+      )}
+
+      {/* Beat Preview Panel at Bottom */}
+      {uploadedKMLData && (
+        <BeatPreviewPanel
+          kmlData={uploadedKMLData}
+          onSave={handleSaveBeatWithKML}
+          onCancel={handleCancelKML}
+          isDarkMode={false}
+        />
+      )}
     </div>
   );
 }

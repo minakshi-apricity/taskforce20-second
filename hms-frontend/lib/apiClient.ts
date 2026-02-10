@@ -64,7 +64,7 @@ export const AuthApi = {
 };
 
 export const CityApi = {
-  list: () => apiFetch("/hms/cities"),
+  list: () => apiFetch<{ cities: { id: string; name: string }[] }>("/hms/cities"),
   create: (body: { name: string; code: string; ulbCode: string }) =>
     apiFetch("/hms/cities", { method: "POST", body: JSON.stringify(body) }),
   setEnabled: (cityId: string, enabled: boolean) =>
@@ -154,7 +154,7 @@ export async function getModuleId(moduleName: ModuleName): Promise<string | unde
 }
 
 export const TaskforceApi = {
-  listCases: () => apiFetch<{ cases: any[] }>("/modules/taskforce/cases"),
+  listCases: (cityId?: string) => apiFetch<{ cases: any[] }>(cityId ? `/modules/taskforce/cases?cityId=${cityId}` : "/modules/taskforce/cases"),
   createCase: (body: { title: string; status?: string; geoNodeId?: string; assignedTo?: string }) =>
     apiFetch<{ case: any }>("/modules/taskforce/cases", { method: "POST", body: JSON.stringify(body) }),
   updateCase: (id: string, body: { status?: string; assignedTo?: string }) =>
@@ -200,11 +200,12 @@ export const TaskforceApi = {
       method: "POST",
       body: JSON.stringify(body || {})
     }),
-  getRecords: (filters?: { page?: number; limit?: number; tab?: string }) => {
+  getRecords: (filters?: { page?: number; limit?: number; tab?: string; cityId?: string }) => {
     const params = new URLSearchParams();
     if (filters?.page) params.append("page", filters.page.toString());
     if (filters?.limit) params.append("limit", filters.limit.toString());
     if (filters?.tab) params.append("tab", filters.tab);
+    if (filters?.cityId) params.append("cityId", filters.cityId);
     return apiFetch<{
       data: any[];
       meta: { page: number; limit: number; total: number; totalPages: number };

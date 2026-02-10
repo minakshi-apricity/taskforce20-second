@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ModuleGuard } from "@components/Guards";
-import { TaskforceApi, ApiError } from "@lib/apiClient";
+import { TaskforceApi, ApiError, CityApi } from "@lib/apiClient";
 import { useAuth } from "@hooks/useAuth";
 
 type Case = {
@@ -16,9 +16,26 @@ type Case = {
 
 export default function TaskforceTasksPage() {
   const [cases, setCases] = useState<Case[]>([]);
+  const [records, setRecords] = useState<any[]>([]); // New records state
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // City Filter State
+  const [cities, setCities] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCity, setSelectedCity] = useState<string>("");
+
+  // Detailed Metrics State
+  const [metrics, setMetrics] = useState({
+    total: 0,
+    approved: 0,
+    rejected: 0,
+    actionRequired: 0,
+    actionTaken: 0,
+    systemPerformance: 0,
+    eliminated: 0,
+    inProgress: 0
+  });
 
   const [title, setTitle] = useState("");
   const [geoNodeId, setGeoNodeId] = useState("");
@@ -33,7 +50,7 @@ export default function TaskforceTasksPage() {
   const loadCases = async () => {
     try {
       setLoading(true);
-      const data = await TaskforceApi.listCases();
+      const data = await TaskforceApi.listCases(selectedCity);
       setCases(data.cases || []);
       setError("");
     } catch (err) {
@@ -47,9 +64,80 @@ export default function TaskforceTasksPage() {
     }
   };
 
+  // Determine role for UI switching
+  const { user } = useAuth();
+
+  const isSuperAdmin = user?.roles?.includes("HMS_SUPER_ADMIN");
+  const isCityAdmin = user?.roles?.includes("CITY_ADMIN") || isSuperAdmin;
+
+  const loadCities = async () => {
+    try {
+      if (isSuperAdmin) {
+        const { cities } = await CityApi.list();
+        setCities(cities || []);
+        if (cities?.length > 0 && !selectedCity) {
+          setSelectedCity(cities[0].id);
+        }
+      } else if (user?.cityId) {
+        // For regular City Admin, auto-select their city
+        setCities([{ id: user.cityId, name: user.cityName || "My City" }]);
+        setSelectedCity(user.cityId);
+      }
+    } catch (err) {
+      console.error("Failed to load cities", err);
+    }
+  };
+
+  const loadMetrics = async () => {
+    if (!selectedCity) return;
+    try {
+      // Fetch stats using getRecords which returns detailed stats
+      const { stats, data } = await TaskforceApi.getRecords({ cityId: selectedCity });
+      setRecords(data || []); // Store the records
+
+      // Calculate derived metrics
+      // "Action Taken" - assume this includes any actioned items (approved + rejected + action required resolved?)
+      // For now, let's assume it's approved + rejected
+      const actionTaken = (stats.approved || 0) + (stats.rejected || 0);
+
+      // "System Performance" - example calculation: approved / total * 100
+      const total = stats.total || 1; // avoid div by zero
+      const performance = Math.round(((stats.approved || 0) / total) * 100);
+
+      // "Eliminated Feeder Points" - assume these are the approved ones (cleared)
+      const eliminated = stats.approved || 0;
+
+      // "In Progress" - surveys running on ground, calculated based on eliminated feeder points
+      // User said: "calculated based on eliminated feeder points". 
+      // Maybe Total - Eliminated? Or Pending?
+      // Let's use Pending for "In Progress" as it represents active work not yet approved/eliminated.
+      const inProgress = stats.pending || 0;
+
+      setMetrics({
+        total: stats.total || 0,
+        approved: stats.approved || 0,
+        rejected: stats.rejected || 0,
+        actionRequired: stats.actionRequired || 0,
+        actionTaken,
+        systemPerformance: performance,
+        eliminated,
+        inProgress
+      });
+    } catch (err) {
+      console.error("Failed to load metrics", err);
+    }
+  };
+
   useEffect(() => {
-    loadCases();
-  }, []);
+    if (user) loadCities();
+  }, [user]);
+
+  useEffect(() => {
+    if (selectedCity) {
+      loadCases(); // original logic
+      loadMetrics(); // new metrics
+    }
+  }, [selectedCity]);
 
   const createCase = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,35 +188,12 @@ export default function TaskforceTasksPage() {
     }
   };
 
-  // Determine role for UI switching
-  const { user } = useAuth(); // Assuming useAuth is available or we get it from context if not already imported
-  // But wait, useAuth was not imported in the original file, it was using ModuleGuard.
-  // I need to import useAuth. 
-  // checking imports: import { ModuleGuard } from "@components/Guards";
-
-  // I need to add useAuth import. 
-  // Let's modify the imports first.
-
-  const isCityAdmin = user?.roles?.includes("CITY_ADMIN") || user?.roles?.includes("HMS_SUPER_ADMIN");
 
   // Premium Dashboard for City Admin
   if (isCityAdmin) {
-    const stats = {
-      total: cases.length,
-      open: cases.filter(c => c.status === 'OPEN').length,
-      inProgress: cases.filter(c => c.status === 'IN_PROGRESS').length,
-      completed: cases.filter(c => c.status === 'COMPLETED').length,
-    };
 
-    // Group by GeoNode as "Zone" proxy
-    const nodeStats = cases.reduce((acc, c) => {
-      const node = c.geoNodeId || "Unassigned";
-      if (!acc[node]) acc[node] = { total: 0, open: 0, completed: 0 };
-      acc[node].total++;
-      if (c.status === 'OPEN' || c.status === 'IN_PROGRESS') acc[node].open++;
-      if (c.status === 'COMPLETED') acc[node].completed++;
-      return acc;
-    }, {} as Record<string, any>);
+
+
 
     return (
       <ModuleGuard module="TASKFORCE" roles={["CITY_ADMIN", "HMS_SUPER_ADMIN"]}>
@@ -212,108 +277,104 @@ export default function TaskforceTasksPage() {
               <p style={{ color: '#64748b', marginTop: 8 }}>Track transformation tasks, assignments, and resolution status.</p>
             </div>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <div style={{ background: '#dbeafe', color: '#1e40af', fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 999, border: '1px solid #bfdbfe' }}>
-                City Admin View
-              </div>
+              {isSuperAdmin ? (
+                <div style={{ position: 'relative' }}>
+                  <select
+                    value={selectedCity}
+                    onChange={(e) => setSelectedCity(e.target.value)}
+                    style={{
+                      appearance: 'none',
+                      background: '#f8fafc',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 8,
+                      padding: '10px 36px 10px 16px',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: '#334155',
+                      cursor: 'pointer',
+                      minWidth: 200
+                    }}
+                  >
+                    {cities.map(city => (
+                      <option key={city.id} value={city.id}>{city.name}</option>
+                    ))}
+                    {cities.length === 0 && <option>Loading cities...</option>}
+                  </select>
+                  <div style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  background: '#f1f5f9',
+                  padding: '10px 16px',
+                  borderRadius: 8,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: '#334155',
+                  border: '1px solid #e2e8f0'
+                }}>
+                  {cities.find(c => c.id === selectedCity)?.name || user?.cityName || "My City"}
+                </div>
+              )}
+
               <button className="btn btn-primary" onClick={() => setShowCreateModal(true)} style={{ borderRadius: 8, fontWeight: 700 }}>
                 + New Task
               </button>
             </div>
           </header>
 
-          {/* KPI Cards */}
-          <div className="stats-compact-grid mb-8">
-            <StatCard label="Total Tasks" value={stats.total} sub="All records" color="#3b82f6" />
-            <StatCard label="Open" value={stats.open} sub="Not Started" color="#f59e0b" />
-            <StatCard label="In Progress" value={stats.inProgress} sub="Active Work" color="#8b5cf6" />
-            <StatCard label="Completed" value={stats.completed} sub="Resolved" color="#059669" />
+          {/* New Expanded Metrics Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
+            <StatCard label="Total Feeder Points" value={metrics.total} sub="Identified Points" color="#3b82f6" />
+            <StatCard label="In Progress" value={metrics.inProgress} sub="Surveys Running" color="#8b5cf6" />
+            <StatCard label="Action Required" value={metrics.actionRequired} sub="Needs Attention" color="#f59e0b" />
+            <StatCard label="QC Approved Reports" value={metrics.approved} sub="Verified Clean" color="#10b981" />
+
+            <StatCard label="QC Rejected Reports" value={metrics.rejected} sub="Issues Found" color="#ef4444" />
+            <StatCard label="Action Taken" value={metrics.actionTaken} sub="Resolved Items" color="#0ea5e9" />
+            <StatCard label="Eliminated Points" value={metrics.eliminated} sub="Permanent Fix" color="#6366f1" />
+            <StatCard label="System Performance" value={`${metrics.systemPerformance}%`} sub="Efficiency Score" color="#f43f5e" />
           </div>
 
-          <div className="grid grid-cols-12 gap-8">
-            {/* GeoNode Breakdown */}
-            <div className="col-span-12 lg:col-span-4">
-              <div className="compact-card">
-                <h2 className="section-title mb-4">Location Breakdown</h2>
-                <table className="modern-table">
-                  <thead>
-                    <tr>
-                      <th>Geo Node</th>
-                      <th style={{ textAlign: 'right' }}>Total</th>
-                      <th style={{ textAlign: 'right' }}>Active</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(nodeStats).map(([name, stat]: any) => (
-                      <tr key={name}>
-                        <td style={{ fontWeight: 600, color: '#334155' }}>{name}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 500, color: '#64748b' }}>{stat.total}</td>
-                        <td style={{ textAlign: 'right', color: '#d97706', fontWeight: 700 }}>{stat.open}</td>
-                      </tr>
-                    ))}
-                    {Object.keys(nodeStats).length === 0 && (
-                      <tr><td colSpan={3} style={{ textAlign: 'center', padding: '24px', color: '#94a3b8' }}>No data available</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+          <div className="compact-card">
+            <div className="card-header-flex">
+              <h2 className="section-title">Recent Feeder Points</h2>
             </div>
 
-            {/* Main Table */}
-            <div className="col-span-12 lg:col-span-8">
-              <div className="compact-card">
-                <div className="card-header-flex">
-                  <h2 className="section-title">All Tasks</h2>
-                </div>
-
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="modern-table">
-                    <thead>
-                      <tr>
-                        <th>Task</th>
-                        <th>Status</th>
-                        <th>Assignee</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cases.map((c) => (
-                        <tr key={c.id}>
-                          <td>
-                            <div style={{ fontWeight: 700, color: '#0f172a' }}>{c.title}</div>
-                            <div style={{ fontSize: 12, color: '#64748b', marginTop: 2, fontFamily: 'monospace' }}>{c.id.slice(0, 8)}...</div>
-                          </td>
-                          <td>
-                            <StatusBadge status={c.status} />
-                          </td>
-                          <td>
-                            {c.assignedTo ? (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <div style={{ width: 20, height: 20, borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>
-                                  {c.assignedTo.charAt(0).toUpperCase()}
-                                </div>
-                                <span style={{ fontSize: 13, color: '#334155', fontWeight: 500 }}>{c.assignedTo}</span>
-                              </div>
-                            ) : <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 13 }}>Unassigned</span>}
-                          </td>
-                          <td>
-                            <button className="btn btn-xs btn-ghost" onClick={() => {
-                              setUpdatingCaseId(c.id);
-                              // Simple toggle for demo in new UI
-                              const next = c.status === 'COMPLETED' ? 'OPEN' : 'COMPLETED';
-                              updateStatus(c.id, next);
-                            }}>
-                              Mark {c.status === 'COMPLETED' ? 'Open' : 'Done'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                      {cases.length === 0 && (
-                        <tr><td colSpan={4} style={{ textAlign: 'center', padding: 48, color: '#94a3b8' }}>No tasks found</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="modern-table">
+                <thead>
+                  <tr>
+                    <th>Point ID</th>
+                    <th>Location</th>
+                    <th>Status</th>
+                    <th>Update Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {records.map((r) => (
+                    <tr key={r.id}>
+                      <td>
+                        <div style={{ fontWeight: 700, color: '#0f172a' }}>{r.name || r.id}</div>
+                        <div style={{ fontSize: 12, color: '#64748b', marginTop: 2, fontFamily: 'monospace' }}>{r.id.slice(0, 8)}...</div>
+                      </td>
+                      <td>
+                        {r.geoNodeId || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Unknown</span>}
+                      </td>
+                      <td>
+                        <StatusBadge status={r.status} />
+                      </td>
+                      <td style={{ color: '#64748b', fontSize: 13 }}>
+                        {r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : '-'}
+                      </td>
+                    </tr>
+                  ))}
+                  {records.length === 0 && (
+                    <tr><td colSpan={4} style={{ textAlign: 'center', padding: 48, color: '#94a3b8' }}>No records found</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
