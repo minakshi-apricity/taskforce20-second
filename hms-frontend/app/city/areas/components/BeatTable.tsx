@@ -11,9 +11,10 @@ interface BeatTableProps {
     onEdit: (beat: any) => void;
     onViewData: (beat: any) => void;
     onAssign: (beat: any) => void;
+    isQC?: boolean;
 }
 
-export default function BeatTable({ beats, onRefresh, onView, onEdit, onViewData, onAssign }: BeatTableProps) {
+export default function BeatTable({ beats, onRefresh, onView, onEdit, onViewData, onAssign, isQC = false }: BeatTableProps) {
     const [deletingId, setDeletingId] = useState<string | null>(null);
 
     const handleDelete = async (id: string) => {
@@ -126,21 +127,25 @@ export default function BeatTable({ beats, onRefresh, onView, onEdit, onViewData
                                             >
                                                 <UserPlus size={16} />
                                             </button>
-                                            <button
-                                                onClick={() => onEdit(beat)}
-                                                style={{ padding: "6px", borderRadius: "6px", border: "1px solid #e5e7eb", backgroundColor: "white", color: "#4b5563", cursor: "pointer" }}
-                                                title="Edit Beat"
-                                            >
-                                                <Edit2 size={16} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(beat.id)}
-                                                disabled={deletingId === beat.id}
-                                                style={{ padding: "6px", borderRadius: "6px", border: "1px solid #fee2e2", backgroundColor: "#fef2f2", color: "#dc2626", cursor: deletingId === beat.id ? "not-allowed" : "pointer" }}
-                                                title="Delete Beat"
-                                            >
-                                                {deletingId === beat.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-                                            </button>
+                                            {!isQC && (
+                                                <>
+                                                    <button
+                                                        onClick={() => onEdit(beat)}
+                                                        style={{ padding: "6px", borderRadius: "6px", border: "1px solid #e5e7eb", backgroundColor: "white", color: "#4b5563", cursor: "pointer" }}
+                                                        title="Edit Beat"
+                                                    >
+                                                        <Edit2 size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDelete(beat.id)}
+                                                        disabled={deletingId === beat.id}
+                                                        style={{ padding: "6px", borderRadius: "6px", border: "1px solid #fee2e2", backgroundColor: "#fef2f2", color: "#dc2626", cursor: deletingId === beat.id ? "not-allowed" : "pointer" }}
+                                                        title="Delete Beat"
+                                                    >
+                                                        {deletingId === beat.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

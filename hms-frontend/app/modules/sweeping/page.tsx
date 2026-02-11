@@ -153,6 +153,7 @@ export default function SweepingModulePage() {
                                     onEdit={setEditingBeat}
                                     onViewData={setInspectingBeat}
                                     onAssign={setAssigningBeat}
+                                    isQC={isQC}
                                 />
                             ) : (
                                 <GlobalBeatMapView beats={beats} />
