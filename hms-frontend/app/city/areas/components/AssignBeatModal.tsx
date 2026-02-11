@@ -13,10 +13,11 @@ interface AssignBeatModalProps {
 export default function AssignBeatModal({ beat, onClose, onSuccess }: AssignBeatModalProps) {
     const [loading, setLoading] = useState(false);
     const [fetching, setFetching] = useState(true);
-    const [assigned, setAssigned] = useState(false);
+    const [currentAssignedId, setCurrentAssignedId] = useState<string | null>(beat.assignedToId || null);
     const [search, setSearch] = useState("");
     const [users, setUsers] = useState<any[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const [assigned, setAssigned] = useState(false);
 
     useEffect(() => {
         fetchUsers();
@@ -36,16 +37,19 @@ export default function AssignBeatModal({ beat, onClose, onSuccess }: AssignBeat
         }
     };
 
-    const handleAssign = async (userId: string) => {
+    const handleToggleAssign = async (userId: string) => {
+        const isCurrent = userId === currentAssignedId;
+        const targetId = isCurrent ? null : userId;
+
         setLoading(true);
         try {
-            await AreaBeatApi.assign(beat.id, userId);
-
+            await AreaBeatApi.assign(beat.id, targetId as any);
+            setCurrentAssignedId(targetId);
             setAssigned(true);
-            setTimeout(() => {
-                onSuccess();
-                onClose();
-            }, 1000);
+            onSuccess();
+
+            // Revert "assigned" check mark after a delay if we want to stay in modal
+            setTimeout(() => setAssigned(false), 2000);
         } catch (err: any) {
             alert(err.message);
         } finally {
@@ -124,53 +128,66 @@ export default function AssignBeatModal({ beat, onClose, onSuccess }: AssignBeat
                                 </div>
                             </div>
                         ) : (
-                            filteredUsers.map((user: any) => (
-                                <div key={user.id} style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    alignItems: "center",
-                                    padding: "12px",
-                                    borderRadius: "10px",
-                                    border: "1px solid #f3f4f6",
-                                    backgroundColor: "#fcfcfd"
-                                }}>
-                                    <div>
-                                        <div style={{ fontWeight: 600, fontSize: "0.875rem", color: "#111827", display: "flex", alignItems: "center", gap: "8px" }}>
-                                            {user.name}
-                                            {user.matchesContext && (
-                                                <span style={{
-                                                    backgroundColor: "#dcfce7", color: "#166534",
-                                                    fontSize: "0.65rem", padding: "2px 8px", borderRadius: "10px",
-                                                    fontWeight: 700, textTransform: "uppercase"
-                                                }}>
-                                                    Local Match
-                                                </span>
-                                            )}
+                            filteredUsers.map((user: any) => {
+                                const isAssigned = user.id === currentAssignedId;
+                                return (
+                                    <div key={user.id} style={{
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
+                                        padding: "12px",
+                                        borderRadius: "10px",
+                                        border: "1px solid #f3f4f6",
+                                        backgroundColor: isAssigned ? "#f0f9ff" : "#fcfcfd"
+                                    }}>
+                                        <div>
+                                            <div style={{ fontWeight: 600, fontSize: "0.875rem", color: "#111827", display: "flex", alignItems: "center", gap: "8px" }}>
+                                                {user.name}
+                                                {user.matchesContext && (
+                                                    <span style={{
+                                                        backgroundColor: "#dcfce7", color: "#166534",
+                                                        fontSize: "0.65rem", padding: "2px 8px", borderRadius: "10px",
+                                                        fontWeight: 700, textTransform: "uppercase"
+                                                    }}>
+                                                        Local Match
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>QC Officer • {user.email}</div>
                                         </div>
-                                        <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>QC Officer • {user.email}</div>
+                                        <button
+                                            onClick={() => handleToggleAssign(user.id)}
+                                            disabled={loading}
+                                            style={{
+                                                padding: "6px 16px",
+                                                borderRadius: "6px",
+                                                border: isAssigned ? "1px solid #dc2626" : "none",
+                                                backgroundColor: isAssigned ? "white" : "#2563eb",
+                                                color: isAssigned ? "#dc2626" : "white",
+                                                fontSize: "0.75rem",
+                                                fontWeight: 600,
+                                                cursor: loading ? "not-allowed" : "pointer",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: "4px",
+                                                transition: "all 0.2s"
+                                            }}
+                                        >
+                                            {loading ? (
+                                                <Loader2 size={14} className="animate-spin" />
+                                            ) : (
+                                                assigned && isAssigned ? (
+                                                    <span style={{ color: "#16a34a", display: "flex", alignItems: "center", gap: "4px" }}>
+                                                        <Check size={14} /> Assigned!
+                                                    </span>
+                                                ) : (
+                                                    isAssigned ? "Unassign" : "Assign"
+                                                )
+                                            )}
+                                        </button>
                                     </div>
-                                    <button
-                                        onClick={() => handleAssign(user.id)}
-                                        disabled={loading || assigned}
-                                        style={{
-                                            padding: "6px 16px",
-                                            borderRadius: "6px",
-                                            border: "none",
-                                            backgroundColor: assigned ? "#16a34a" : "#2563eb",
-                                            color: "white",
-                                            fontSize: "0.75rem",
-                                            fontWeight: 600,
-                                            cursor: (loading || assigned) ? "not-allowed" : "pointer",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: "4px",
-                                            transition: "all 0.2s"
-                                        }}
-                                    >
-                                        {loading ? <Loader2 size={14} className="animate-spin" /> : (assigned ? <Check size={14} /> : "Assign")}
-                                    </button>
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </div>
                 </div>

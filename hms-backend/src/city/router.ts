@@ -1082,18 +1082,18 @@ router.post("/areas/:id/assign", async (req, res, next) => {
   try {
     const cityId = req.auth!.cityId!;
     const { id } = req.params;
-    const { userId } = req.body;
-
-    if (!userId) throw new HttpError(400, "User ID required");
+    const { userId } = req.body; // Can be null to unassign
 
     const beat = await prisma.cityAreaBeat.findUnique({ where: { id } });
     if (!beat || beat.cityId !== cityId) throw new HttpError(404, "Beat not found");
 
     // Optional: Verify user exists and has QC role in this city
-    const qcUser = await prisma.userCity.findUnique({
-      where: { userId_cityId_role: { userId, cityId, role: "QC" } }
-    });
-    if (!qcUser) throw new HttpError(400, "User is not a QC assigned to this city");
+    if (userId) {
+      const qcUser = await prisma.userCity.findUnique({
+        where: { userId_cityId_role: { userId, cityId, role: "QC" } }
+      });
+      if (!qcUser) throw new HttpError(400, "User is not a QC assigned to this city");
+    }
 
     const updated = await prisma.cityAreaBeat.update({
       where: { id },
