@@ -9,6 +9,7 @@ interface KMLDataViewerProps {
 }
 
 export default function KMLDataViewer({ beat, onClose }: KMLDataViewerProps) {
+    const [activeTab, setActiveTab] = React.useState<"properties" | "raw">("properties");
     const features = beat.geometry?.features || [];
 
     return (
@@ -33,69 +34,112 @@ export default function KMLDataViewer({ beat, onClose }: KMLDataViewerProps) {
                 }}>
                     <div>
                         <h3 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 700, color: "#111827" }}>
-                            KML Content Viewer
+                            KML Data Center
                         </h3>
                         <p style={{ margin: 0, fontSize: "0.875rem", color: "#6b7280" }}>
-                            Detailed properties for {beat.beatName}
+                            Inspecting {beat.beatName}
                         </p>
                     </div>
-                    <button onClick={onClose} style={{ padding: "8px", borderRadius: "50%", border: "none", backgroundColor: "#fff", cursor: "pointer", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }}>
-                        <X size={20} />
-                    </button>
+                    <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                        <div style={{ display: "flex", backgroundColor: "#fff", padding: "4px", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
+                            <button
+                                onClick={() => setActiveTab("properties")}
+                                style={{
+                                    padding: "6px 12px", borderRadius: "6px", border: "none", fontSize: "0.75rem", fontWeight: activeTab === "properties" ? 700 : 500,
+                                    backgroundColor: activeTab === "properties" ? "#eff6ff" : "transparent",
+                                    color: activeTab === "properties" ? "#2563eb" : "#64748b",
+                                    cursor: "pointer"
+                                }}
+                            >
+                                Properties
+                            </button>
+                            {beat.rawKml && (
+                                <button
+                                    onClick={() => setActiveTab("raw")}
+                                    style={{
+                                        padding: "6px 12px", borderRadius: "6px", border: "none", fontSize: "0.75rem", fontWeight: activeTab === "raw" ? 700 : 500,
+                                        backgroundColor: activeTab === "raw" ? "#eff6ff" : "transparent",
+                                        color: activeTab === "raw" ? "#2563eb" : "#64748b",
+                                        cursor: "pointer"
+                                    }}
+                                >
+                                    Raw KML
+                                </button>
+                            )}
+                        </div>
+                        <button onClick={onClose} style={{ padding: "8px", borderRadius: "50%", border: "none", backgroundColor: "#fff", cursor: "pointer", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }}>
+                            <X size={20} />
+                        </button>
+                    </div>
                 </div>
 
                 <div style={{ flex: 1, overflowY: "auto", padding: "24px" }}>
-                    {features.length === 0 ? (
-                        <div style={{ textAlign: "center", padding: "40px", color: "#9ca3af" }}>
-                            <FileText size={48} style={{ margin: "0 auto 16px", opacity: 0.5 }} />
-                            <p>No feature metadata found in this KML file.</p>
-                        </div>
-                    ) : (
-                        <div style={{ display: "grid", gap: "16px" }}>
-                            {features.map((feature: any, idx: number) => (
-                                <div key={idx} style={{
-                                    padding: "16px",
-                                    borderRadius: "12px",
-                                    border: "1px solid #e5e7eb",
-                                    backgroundColor: "#fff"
-                                }}>
-                                    <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
-                                        <div style={{
-                                            padding: "8px",
-                                            borderRadius: "8px",
-                                            backgroundColor: "#eff6ff",
-                                            color: "#2563eb"
-                                        }}>
-                                            <MapPin size={18} />
+                    {activeTab === "properties" ? (
+                        features.length === 0 ? (
+                            <div style={{ textAlign: "center", padding: "40px", color: "#9ca3af" }}>
+                                <FileText size={48} style={{ margin: "0 auto 16px", opacity: 0.5 }} />
+                                <p>No feature metadata found in this KML file.</p>
+                            </div>
+                        ) : (
+                            <div style={{ display: "grid", gap: "16px" }}>
+                                {features.map((feature: any, idx: number) => (
+                                    <div key={idx} style={{
+                                        padding: "16px",
+                                        borderRadius: "12px",
+                                        border: "1px solid #e5e7eb",
+                                        backgroundColor: "#fff"
+                                    }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
+                                            <div style={{
+                                                padding: "8px",
+                                                borderRadius: "8px",
+                                                backgroundColor: "#eff6ff",
+                                                color: "#2563eb"
+                                            }}>
+                                                <MapPin size={18} />
+                                            </div>
+                                            <strong style={{ fontSize: "1rem", color: "#111827" }}>
+                                                {feature.properties?.name || `Feature #${idx + 1}`}
+                                            </strong>
+                                            <span style={{
+                                                marginLeft: "auto",
+                                                fontSize: "0.75rem",
+                                                padding: "2px 8px",
+                                                borderRadius: "9999px",
+                                                backgroundColor: "#f3f4f6",
+                                                color: "#4b5563"
+                                            }}>
+                                                {feature.geometry?.type}
+                                            </span>
                                         </div>
-                                        <strong style={{ fontSize: "1rem", color: "#111827" }}>
-                                            {feature.properties?.name || `Feature #${idx + 1}`}
-                                        </strong>
-                                        <span style={{
-                                            marginLeft: "auto",
-                                            fontSize: "0.75rem",
-                                            padding: "2px 8px",
-                                            borderRadius: "9999px",
-                                            backgroundColor: "#f3f4f6",
-                                            color: "#4b5563"
-                                        }}>
-                                            {feature.geometry?.type}
-                                        </span>
-                                    </div>
 
-                                    <div style={{ display: "grid", gap: "8px" }}>
-                                        {Object.entries(feature.properties || {}).map(([key, value]) => {
-                                            if (key === "name" || key === "styleUrl") return null;
-                                            return (
-                                                <div key={key} style={{ display: "flex", fontSize: "0.875rem" }}>
-                                                    <span style={{ color: "#6b7280", width: "140px", flexShrink: 0 }}>{key}:</span>
-                                                    <span style={{ color: "#374151", wordBreak: "break-all" }}>{String(value)}</span>
-                                                </div>
-                                            );
-                                        })}
+                                        <div style={{ display: "grid", gap: "8px" }}>
+                                            {Object.entries(feature.properties || {}).map(([key, value]) => {
+                                                if (key === "name" || key === "styleUrl") return null;
+                                                return (
+                                                    <div key={key} style={{ display: "flex", fontSize: "0.875rem" }}>
+                                                        <span style={{ color: "#6b7280", width: "140px", flexShrink: 0 }}>{key}:</span>
+                                                        <span style={{ color: "#374151", wordBreak: "break-all" }}>{String(value)}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
+                        )
+                    ) : (
+                        <div style={{
+                            backgroundColor: "#1e293b",
+                            color: "#94a3b8",
+                            padding: "24px",
+                            borderRadius: "12px",
+                            fontFamily: "monospace",
+                            fontSize: "0.875rem",
+                            whiteSpace: "pre-wrap",
+                            lineHeight: "1.6"
+                        }}>
+                            {beat.rawKml || "No raw KML data available for this beat."}
                         </div>
                     )}
                 </div>

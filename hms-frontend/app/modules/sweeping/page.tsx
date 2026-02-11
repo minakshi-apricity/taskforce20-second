@@ -9,6 +9,7 @@ import KMLDataViewer from "../../city/areas/components/KMLDataViewer";
 import AssignBeatModal from "../../city/areas/components/AssignBeatModal";
 import dynamic from "next/dynamic";
 import { useAuth } from "@hooks/useAuth";
+import GlobalBeatMapView from "../../city/areas/components/GlobalBeatMapView";
 
 const BeatMapView = dynamic(() => import("../../city/areas/components/BeatMapView"), { ssr: false });
 
@@ -21,15 +22,13 @@ export default function SweepingModulePage() {
     const [inspectingBeat, setInspectingBeat] = useState<any | null>(null);
     const [assigningBeat, setAssigningBeat] = useState<any | null>(null);
 
+    const [viewMode, setViewMode] = useState<"table" | "map">("table");
+
     const isQC = user?.roles?.includes("QC");
 
     const loadBeats = useCallback(async () => {
         try {
             setLoading(true);
-            // If QC, we might want to filter for their beats specifically
-            // but the user said "same data which was passed by assigned beat"
-            // which usually means the full management table.
-            // However, the my-beats endpoint is better for QC.
             const res = isQC
                 ? await AreaBeatApi.listMyBeats()
                 : await AreaBeatApi.list();
@@ -50,18 +49,70 @@ export default function SweepingModulePage() {
         <Protected>
             <ModuleGuard module="SWEEPING" roles={["QC", "CITY_ADMIN", "HMS_SUPER_ADMIN"]}>
                 <div className="page" style={{ padding: "24px" }}>
-                    <div style={{ marginBottom: "32px" }}>
-                        <p className="eyebrow" style={{ textTransform: 'uppercase', fontSize: '10px', fontWeight: 700, color: '#64748b', marginBottom: '8px' }}>
-                            Module · Sweeping & Sanitation
-                        </p>
-                        <h1 style={{ fontSize: "24px", fontWeight: 800, color: "#0f172a", margin: 0 }}>
-                            {isQC ? "My Assigned Beats" : "Beat Management"}
-                        </h1>
-                        <p style={{ color: "#64748b", fontSize: "14px", marginTop: "4px" }}>
-                            {isQC
-                                ? "View and monitor beats assigned specifically to you for quality control."
-                                : "Manage all street-level beats, assignments, and city-wide coverage."}
-                        </p>
+                    <div style={{ marginBottom: "32px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+                        <div>
+                            <p className="eyebrow" style={{ textTransform: 'uppercase', fontSize: '10px', fontWeight: 700, color: '#64748b', marginBottom: '8px' }}>
+                                Module · Sweeping & Sanitation
+                            </p>
+                            <h1 style={{ fontSize: "24px", fontWeight: 800, color: "#0f172a", margin: 0, display: "flex", alignItems: "center", gap: "12px" }}>
+                                {isQC ? "My Assigned Beats" : "Beat Management"}
+                                <span style={{
+                                    backgroundColor: "#eff6ff", color: "#2563eb",
+                                    padding: "4px 12px", borderRadius: "20px",
+                                    fontSize: "12px", fontWeight: 700, border: "1px solid #dbeafe"
+                                }}>
+                                    {beats.length} Total
+                                </span>
+                            </h1>
+                            <p style={{ color: "#64748b", fontSize: "14px", marginTop: "4px" }}>
+                                {isQC
+                                    ? "View and monitor beats assigned specifically to you for quality control."
+                                    : "Manage all street-level beats, assignments, and city-wide coverage."}
+                            </p>
+                        </div>
+
+                        <div style={{
+                            display: "flex",
+                            backgroundColor: "#f1f5f9",
+                            padding: "4px",
+                            borderRadius: "12px",
+                            border: "1px solid #e2e8f0"
+                        }}>
+                            <button
+                                onClick={() => setViewMode("table")}
+                                style={{
+                                    padding: "8px 16px",
+                                    borderRadius: "8px",
+                                    border: "none",
+                                    fontSize: "13px",
+                                    fontWeight: 700,
+                                    backgroundColor: viewMode === "table" ? "white" : "transparent",
+                                    color: viewMode === "table" ? "#2563eb" : "#64748b",
+                                    boxShadow: viewMode === "table" ? "0 2px 4px rgba(0,0,0,0.05)" : "none",
+                                    cursor: "pointer",
+                                    transition: "all 0.2s"
+                                }}
+                            >
+                                Table View
+                            </button>
+                            <button
+                                onClick={() => setViewMode("map")}
+                                style={{
+                                    padding: "8px 16px",
+                                    borderRadius: "8px",
+                                    border: "none",
+                                    fontSize: "13px",
+                                    fontWeight: 700,
+                                    backgroundColor: viewMode === "map" ? "white" : "transparent",
+                                    color: viewMode === "map" ? "#2563eb" : "#64748b",
+                                    boxShadow: viewMode === "map" ? "0 2px 4px rgba(0,0,0,0.05)" : "none",
+                                    cursor: "pointer",
+                                    transition: "all 0.2s"
+                                }}
+                            >
+                                Map View
+                            </button>
+                        </div>
                     </div>
 
                     {loading ? (
@@ -71,14 +122,18 @@ export default function SweepingModulePage() {
                         </div>
                     ) : (
                         <div style={{ animation: "fadeIn 0.5s ease-out" }}>
-                            <BeatTable
-                                beats={beats}
-                                onRefresh={loadBeats}
-                                onView={setViewingBeat}
-                                onEdit={setEditingBeat}
-                                onViewData={setInspectingBeat}
-                                onAssign={setAssigningBeat}
-                            />
+                            {viewMode === "table" ? (
+                                <BeatTable
+                                    beats={beats}
+                                    onRefresh={loadBeats}
+                                    onView={setViewingBeat}
+                                    onEdit={setEditingBeat}
+                                    onViewData={setInspectingBeat}
+                                    onAssign={setAssigningBeat}
+                                />
+                            ) : (
+                                <GlobalBeatMapView beats={beats} />
+                            )}
                         </div>
                     )}
 
