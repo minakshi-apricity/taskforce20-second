@@ -117,14 +117,14 @@ export default function AssignBeatModal({ beat, onClose, onSuccess }: AssignBeat
                         {fetching ? (
                             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px", gap: "12px" }}>
                                 <Loader2 size={32} className="animate-spin" style={{ color: "#2563eb" }} />
-                                <span style={{ fontSize: "0.875rem", color: "#6b7280", fontWeight: 500 }}>Fetching sanitation team...</span>
+                                <span style={{ fontSize: "0.875rem", color: "#6b7280", fontWeight: 500 }}>Fetching taskforce team...</span>
                             </div>
                         ) : filteredUsers.length === 0 ? (
                             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px", textAlign: "center", backgroundColor: "#f9fafb", borderRadius: "12px", border: "1px dashed #e5e7eb" }}>
                                 <AlertCircle size={32} style={{ color: "#9ca3af", marginBottom: "12px" }} />
-                                <div style={{ fontWeight: 700, fontSize: "0.875rem", color: "#374151" }}>No QC users found</div>
+                                <div style={{ fontWeight: 700, fontSize: "0.875rem", color: "#374151" }}>No taskforce members found</div>
                                 <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: "4px" }}>
-                                    Ensure users are assigned the QC role in this city.
+                                    Ensure users are assigned the Taskforce role in this city.
                                 </div>
                             </div>
                         ) : (
@@ -135,42 +135,66 @@ export default function AssignBeatModal({ beat, onClose, onSuccess }: AssignBeat
                                         display: "flex",
                                         justifyContent: "space-between",
                                         alignItems: "center",
-                                        padding: "12px",
-                                        borderRadius: "10px",
-                                        border: "1px solid #f3f4f6",
-                                        backgroundColor: isAssigned ? "#f0f9ff" : "#fcfcfd"
+                                        padding: "16px",
+                                        borderRadius: "14px",
+                                        border: isAssigned ? "2px solid #3b82f6" : "1px solid #f1f5f9",
+                                        backgroundColor: isAssigned ? "#f8fbff" : "#fff",
+                                        transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                                        marginBottom: "4px"
                                     }}>
-                                        <div>
-                                            <div style={{ fontWeight: 600, fontSize: "0.875rem", color: "#111827", display: "flex", alignItems: "center", gap: "8px" }}>
-                                                {user.name}
-                                                {user.matchesContext && (
-                                                    <span style={{
-                                                        backgroundColor: "#dcfce7", color: "#166534",
-                                                        fontSize: "0.65rem", padding: "2px 8px", borderRadius: "10px",
-                                                        fontWeight: 700, textTransform: "uppercase"
-                                                    }}>
-                                                        Local Match
-                                                    </span>
-                                                )}
+                                        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                                            <div style={{
+                                                width: "40px", height: "40px", borderRadius: "12px",
+                                                backgroundColor: user.matchesContext ? "#eff6ff" : "#f1f5f9",
+                                                color: user.matchesContext ? "#2563eb" : "#64748b",
+                                                display: "flex", alignItems: "center", justifyContent: "center",
+                                                fontWeight: 700, fontSize: "14px", border: "1px solid #e2e8f0"
+                                            }}>
+                                                {(user.name || "U")[0]}
                                             </div>
-                                            <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>QC Officer • {user.email}</div>
+                                            <div>
+                                                <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1e293b", display: "flex", alignItems: "center", gap: "8px" }}>
+                                                    {user.name}
+                                                    {user.matchesContext && (
+                                                        <span style={{
+                                                            background: "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)",
+                                                            color: "white", fontSize: "10px", padding: "2px 8px", borderRadius: "6px",
+                                                            fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.025em"
+                                                        }}>
+                                                            On-Site
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "2px" }}>
+                                                    <span style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 500 }}>{user.email}</span>
+                                                    <span style={{ color: "#e2e8f0" }}>•</span>
+                                                    <span style={{
+                                                        fontSize: "0.75rem",
+                                                        color: user.currentBeatCount > 5 ? "#ef4444" : "#10b981",
+                                                        fontWeight: 700
+                                                    }}>
+                                                        {user.currentBeatCount} active beats
+                                                    </span>
+                                                </div>
+                                            </div>
                                         </div>
                                         <button
                                             onClick={() => handleToggleAssign(user.id)}
                                             disabled={loading}
                                             style={{
-                                                padding: "6px 16px",
-                                                borderRadius: "6px",
-                                                border: isAssigned ? "1px solid #dc2626" : "none",
-                                                backgroundColor: isAssigned ? "white" : "#2563eb",
-                                                color: isAssigned ? "#dc2626" : "white",
+                                                padding: "8px 16px",
+                                                borderRadius: "10px",
+                                                border: "none",
+                                                backgroundColor: isAssigned ? "#fee2e2" : "#2563eb",
+                                                color: isAssigned ? "#be123c" : "white",
                                                 fontSize: "0.75rem",
-                                                fontWeight: 600,
+                                                fontWeight: 800,
                                                 cursor: loading ? "not-allowed" : "pointer",
                                                 display: "flex",
                                                 alignItems: "center",
-                                                gap: "4px",
-                                                transition: "all 0.2s"
+                                                gap: "6px",
+                                                transition: "all 0.2s",
+                                                boxShadow: isAssigned ? "none" : "0 4px 6px -1px rgba(37, 99, 235, 0.2)"
                                             }}
                                         >
                                             {loading ? (

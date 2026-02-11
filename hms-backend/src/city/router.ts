@@ -995,9 +995,9 @@ router.get("/areas/:id/potential-assignees", async (req, res, next) => {
     const beat = await prisma.cityAreaBeat.findUnique({ where: { id } });
     if (!beat || beat.cityId !== cityId) throw new HttpError(404, "Beat not found");
 
-    // Fetch QC users from City-level assignments
+    // Fetch Taskforce (Employee) users from City-level assignments
     const records = await prisma.userCity.findMany({
-      where: { cityId, role: Role.QC },
+      where: { cityId, role: Role.EMPLOYEE },
       include: {
         user: {
           include: {
@@ -1007,9 +1007,9 @@ router.get("/areas/:id/potential-assignees", async (req, res, next) => {
       }
     });
 
-    // Fetch QC users from Module-level assignments
+    // Fetch Taskforce (Employee) users from Module-level assignments
     const moduleRecords = await prisma.userModuleRole.findMany({
-      where: { cityId, role: Role.QC },
+      where: { cityId, role: Role.EMPLOYEE },
       include: {
         user: {
           include: {
@@ -1045,10 +1045,11 @@ router.get("/areas/:id/potential-assignees", async (req, res, next) => {
           name: user.name,
           email: user.email,
           phone: user.phone,
-          role: "QC",
+          role: "EMPLOYEE",
           assignedZones: Array.from(zoneIds),
           assignedWards: Array.from(wardIds),
-          matchesContext
+          matchesContext,
+          currentBeatCount: 0
         });
       } else {
         const existing = allUsersMap.get(userId);
@@ -1066,10 +1067,28 @@ router.get("/areas/:id/potential-assignees", async (req, res, next) => {
     records.forEach(r => processRecord(r.user, [r, ...r.user.modules]));
     moduleRecords.forEach(r => processRecord(r.user, [r, ...(r.user.cities || []), ...(r.user.modules || [])]));
 
+    // Fetch assignment counts for these users
+    const userIds = Array.from(allUsersMap.keys());
+    const beatCounts = await prisma.cityAreaBeat.groupBy({
+      by: ['assignedToId'],
+      where: {
+        assignedToId: { in: userIds },
+        deletedAt: null
+      },
+      _count: { _all: true }
+    });
+
+    beatCounts.forEach(c => {
+      if (c.assignedToId && allUsersMap.has(c.assignedToId)) {
+        allUsersMap.get(c.assignedToId).currentBeatCount = c._count._all;
+      }
+    });
+
     const result = Array.from(allUsersMap.values()).sort((a, b) => {
       if (a.matchesContext && !b.matchesContext) return -1;
       if (!a.matchesContext && b.matchesContext) return 1;
-      return (a.name || "").localeCompare(b.name || "");
+      // Secondary sort: least burdened users first
+      return a.currentBeatCount - b.currentBeatCount;
     });
 
     res.json(result);
@@ -1087,12 +1106,12 @@ router.post("/areas/:id/assign", async (req, res, next) => {
     const beat = await prisma.cityAreaBeat.findUnique({ where: { id } });
     if (!beat || beat.cityId !== cityId) throw new HttpError(404, "Beat not found");
 
-    // Optional: Verify user exists and has QC role in this city
+    // Optional: Verify user exists and has EMPLOYEE role in this city
     if (userId) {
-      const qcUser = await prisma.userCity.findUnique({
-        where: { userId_cityId_role: { userId, cityId, role: "QC" } }
+      const employeeUser = await prisma.userCity.findFirst({
+        where: { cityId, userId, role: Role.EMPLOYEE }
       });
-      if (!qcUser) throw new HttpError(400, "User is not a QC assigned to this city");
+      if (!employeeUser) throw new HttpError(400, "User is not a Taskforce member assigned to this city");
     }
 
     const updated = await prisma.cityAreaBeat.update({

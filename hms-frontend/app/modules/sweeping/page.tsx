@@ -9,9 +9,8 @@ import KMLDataViewer from "../../city/areas/components/KMLDataViewer";
 import AssignBeatModal from "../../city/areas/components/AssignBeatModal";
 import dynamic from "next/dynamic";
 import { useAuth } from "@hooks/useAuth";
-import GlobalBeatMapView from "../../city/areas/components/GlobalBeatMapView";
-
 const BeatMapView = dynamic(() => import("../../city/areas/components/BeatMapView"), { ssr: false });
+const GlobalBeatMapView = dynamic(() => import("../../city/areas/components/GlobalBeatMapView"), { ssr: false });
 
 export default function SweepingModulePage() {
     const { user } = useAuth();
@@ -70,6 +69,30 @@ export default function SweepingModulePage() {
                                     : "Manage all street-level beats, assignments, and city-wide coverage."}
                             </p>
                         </div>
+
+                        {!isQC && (
+                            <div style={{ display: "flex", gap: "16px" }}>
+                                <div style={{
+                                    backgroundColor: "white", padding: "12px 20px", borderRadius: "16px",
+                                    border: "1px solid #e2e8f0", display: "flex", flexDirection: "row", gap: "12px",
+                                    boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                                }}>
+                                    <div>
+                                        <div style={{ fontSize: "11px", fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.025em" }}>Unassigned</div>
+                                        <div style={{ fontSize: "20px", fontWeight: 900, color: "#ef4444" }}>
+                                            {beats.filter(b => !b.assignedToId).length}
+                                        </div>
+                                    </div>
+                                    <div style={{ width: "1px", backgroundColor: "#f1f5f9" }} />
+                                    <div>
+                                        <div style={{ fontSize: "11px", fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.025em" }}>Field Team</div>
+                                        <div style={{ fontSize: "20px", fontWeight: 900, color: "#0f172a" }}>
+                                            {new Set(beats.map(b => b.assignedToId).filter(Boolean)).size}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         <div style={{
                             display: "flex",
