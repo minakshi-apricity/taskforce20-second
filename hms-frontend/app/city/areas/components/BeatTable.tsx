@@ -46,6 +46,7 @@ export default function BeatTable({ beats, onRefresh, onView, onEdit, onViewData
                             <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Ward</th>
                             <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Area</th>
                             <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Beat Name</th>
+                            <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Assigned</th>
                             <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Type</th>
                             <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Created At</th>
                             <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", textAlign: "right" }}>Actions</th>
@@ -54,7 +55,7 @@ export default function BeatTable({ beats, onRefresh, onView, onEdit, onViewData
                     <tbody style={{ backgroundColor: "white" }}>
                         {beats.length === 0 ? (
                             <tr>
-                                <td colSpan={7} style={{ padding: "40px 24px", textAlign: "center", color: "#9ca3af" }}>
+                                <td colSpan={8} style={{ padding: "40px 24px", textAlign: "center", color: "#9ca3af" }}>
                                     No beats found. Upload a KML to get started.
                                 </td>
                             </tr>
@@ -65,6 +66,28 @@ export default function BeatTable({ beats, onRefresh, onView, onEdit, onViewData
                                     <td style={{ padding: "16px 24px", fontSize: "0.875rem", color: "#374151" }}>{beat.wardName}</td>
                                     <td style={{ padding: "16px 24px", fontSize: "0.875rem", color: "#374151" }}>{beat.areaName}</td>
                                     <td style={{ padding: "16px 24px", fontSize: "0.875rem", fontWeight: 500, color: "#111827" }}>{beat.beatName}</td>
+                                    <td style={{ padding: "16px 24px", fontSize: "0.875rem", color: "#374151" }}>
+                                        {beat.assignedToName ? (
+                                            <div style={{ display: "flex", flexDirection: "column" }}>
+                                                <span style={{
+                                                    backgroundColor: "#f0f9ff", color: "#0369a1",
+                                                    padding: "4px 10px", borderRadius: "12px", border: "1px solid #bae6fd",
+                                                    fontSize: "0.75rem", fontWeight: 600, display: "inline-block"
+                                                }}>
+                                                    {beat.assignedToName}
+                                                </span>
+                                                <span style={{ fontSize: "0.65rem", color: "#6b7280", marginTop: "2px" }}>{beat.assignedToEmail}</span>
+                                            </div>
+                                        ) : (
+                                            <span style={{
+                                                backgroundColor: "#f3f4f6", color: "#6b7280",
+                                                padding: "4px 10px", borderRadius: "12px", border: "1px solid #e5e7eb",
+                                                fontSize: "0.75rem", fontWeight: 500
+                                            }}>
+                                                Unassigned
+                                            </span>
+                                        )}
+                                    </td>
                                     <td style={{ padding: "16px 24px", fontSize: "0.875rem", color: "#374151" }}>
                                         <span style={{
                                             padding: "2px 8px",

@@ -891,6 +891,11 @@ router.get("/areas", async (req, res, next) => {
     const cityId = req.auth!.cityId!;
     const beats = await prisma.cityAreaBeat.findMany({
       where: { cityId, deletedAt: null },
+      include: {
+        assignedTo: {
+          select: { name: true, email: true }
+        }
+      },
       orderBy: { createdAt: "desc" }
     });
 
@@ -906,6 +911,8 @@ router.get("/areas", async (req, res, next) => {
       zoneName: nodeMap[b.zoneId] || "Unknown",
       wardName: nodeMap[b.wardId] || "Unknown",
       areaName: nodeMap[b.areaId] || "Unknown",
+      assignedToName: b.assignedTo?.name || null,
+      assignedToEmail: b.assignedTo?.email || null
     }));
 
     res.json({ beats: result });
