@@ -110,11 +110,39 @@ const MapController = ({ center, zoom, selectedBeat }: any) => {
 };
 
 export default function BeatsManagementPage() {
-    const [selectedBeat, setSelectedBeat] = useState<typeof mockBeats[0] | null>(null);
+    const [selectedBeat, setSelectedBeat] = useState<any>(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [filters, setFilters] = useState({ ward: "All", status: "All" });
     const [isDarkMode, setIsDarkMode] = useState(false); // Defaulting to Light for dashboard readability
     const [sweeperIcon, setSweeperIcon] = useState<any>(null);
+    const [activeTab, setActiveTab] = useState<"all" | "my">("all");
+    const [assignedBeats, setAssignedBeats] = useState<any[]>([]);
+    const [loadingBeats, setLoadingBeats] = useState(false);
+
+    useEffect(() => {
+        if (activeTab === "my") {
+            loadMyBeats();
+        }
+    }, [activeTab]);
+
+    const loadMyBeats = async () => {
+        setLoadingBeats(true);
+        try {
+            const response = await fetch("/api/city/areas/my-beats", {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setAssignedBeats(data.beats || []);
+            }
+        } catch (err) {
+            console.error("Failed to load assigned beats", err);
+        } finally {
+            setLoadingBeats(false);
+        }
+    };
 
     // KML Upload states
     const [showKMLUploader, setShowKMLUploader] = useState(false);
@@ -173,13 +201,16 @@ export default function BeatsManagementPage() {
     const liveVehicleBeats = useMemo(() => mockBeats.filter(b => b.status === 'Cleaned').slice(0, 3), []);
 
     const filteredBeats = useMemo(() => {
-        return mockBeats.filter(beat => {
-            if (searchQuery && !beat.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+        const sourceData = activeTab === "all" ? mockBeats : assignedBeats;
+        return (sourceData || []).filter(beat => {
+            if (searchQuery && !beat.name?.toLowerCase().includes(searchQuery.toLowerCase()) && !beat.beatName?.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+            // Map beatName to name for consistency if needed
+            const name = beat.name || beat.beatName || "Unnamed Beat";
             if (filters.ward !== "All" && beat.ward !== filters.ward) return false;
             if (filters.status !== "All" && beat.status !== filters.status) return false;
             return true;
         });
-    }, [filters, searchQuery]);
+    }, [filters, searchQuery, activeTab, assignedBeats]);
 
     const stats = useMemo(() => {
         const total = filteredBeats.length;
@@ -235,6 +266,21 @@ export default function BeatsManagementPage() {
                                 Beats Command Center
                             </h1>
                             <p className="page-subtitle">Real-time sanitation monitoring network</p>
+
+                            <div className="tab-switcher mt-4">
+                                <button
+                                    className={`tab-btn ${activeTab === 'all' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('all')}
+                                >
+                                    All Fleet Monitoring
+                                </button>
+                                <button
+                                    className={`tab-btn ${activeTab === 'my' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('my')}
+                                >
+                                    My Assigned Beats
+                                </button>
+                            </div>
                         </div>
 
                         <div className="header-actions">
@@ -278,11 +324,11 @@ export default function BeatsManagementPage() {
                     {/* KPI Statistics Row */}
                     <div className="stats-grid">
                         <MetricCard
-                            title="Total Beats"
+                            title={activeTab === 'all' ? "Total Beats" : "My Beats"}
                             value={stats.total}
                             icon={<Navigation size={18} />}
                             theme={isDarkMode}
-                            trend="+2 from last week"
+                            trend={activeTab === 'my' ? "Directly assigned to you" : "+2 from last week"}
                         />
                         <MetricCard
                             title="Coverage"
@@ -302,7 +348,7 @@ export default function BeatsManagementPage() {
                         />
                         <MetricCard
                             title="Active Sweepers"
-                            value={liveVehicleBeats.length}
+                            value={activeTab === 'all' ? liveVehicleBeats.length : 0}
                             icon={<Truck size={18} />}
                             color="#3b82f6"
                             theme={isDarkMode}
@@ -317,7 +363,7 @@ export default function BeatsManagementPage() {
                         <div className="map-section card" style={{ background: cardColor, borderColor: borderColor }}>
                             <div className="card-header">
                                 <div className="flex items-center gap-4">
-                                    <div className="card-title">Live Map View</div>
+                                    <div className="card-title">{activeTab === 'all' ? 'Fleet Logistics View' : 'My Beats Map'}</div>
                                     <div className="filter-pills">
                                         {[
                                             { label: 'All', value: 'All' },
@@ -362,10 +408,23 @@ export default function BeatsManagementPage() {
                                         const isCritical = beat.status === "Not cleaned";
                                         const color = beat.status === 'Not cleaned' ? '#ef4444' : beat.status === 'Cleaned' ? '#22c55e' : '#f59e0b';
 
+                                        // Normalize coordinates: 
+                                        // Backend geometry is GeoJSON [lng, lat]. Mock data is [lat, lng].
+                                        let coords = beat.coordinates;
+                                        if (!coords && beat.geometry?.coordinates) {
+                                            if (beat.geometry.type === 'LineString') {
+                                                coords = beat.geometry.coordinates.map((c: any) => [c[1], c[0]]);
+                                            } else if (beat.geometry.type === 'Point') {
+                                                coords = [[beat.geometry.coordinates[1], beat.geometry.coordinates[0]]];
+                                            }
+                                        }
+
+                                        if (!coords || coords.length === 0) return null;
+
                                         return (
                                             <React.Fragment key={beat.id}>
                                                 <Polyline
-                                                    positions={beat.coordinates as any}
+                                                    positions={coords as any}
                                                     pathOptions={{
                                                         color: color,
                                                         weight: isSelected ? 18 : 10,
@@ -374,7 +433,7 @@ export default function BeatsManagementPage() {
                                                     }}
                                                 />
                                                 <Polyline
-                                                    positions={beat.coordinates as any}
+                                                    positions={coords as any}
                                                     pathOptions={{
                                                         color: color,
                                                         weight: isSelected ? 6 : 4,
@@ -389,8 +448,8 @@ export default function BeatsManagementPage() {
                                                 >
                                                     <Popup closeButton={false} className="glass-popup">
                                                         <div className="popup-content">
-                                                            <div className="pop-name">{beat.name}</div>
-                                                            <div className="pop-status">{beat.status}</div>
+                                                            <div className="pop-name">{beat.name || beat.beatName}</div>
+                                                            <div className="pop-status">{beat.status || "Assigned Beat"}</div>
                                                         </div>
                                                     </Popup>
                                                 </Polyline>
@@ -871,6 +930,35 @@ export default function BeatsManagementPage() {
                             transform: translateY(-1px);
                             box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
                         }
+
+                        .tab-switcher {
+                            display: flex;
+                            gap: 12px;
+                            margin-bottom: 0;
+                        }
+
+                        .tab-btn {
+                            background: rgba(128, 128, 128, 0.08);
+                            border: 1px solid rgba(128, 128, 128, 0.1);
+                            padding: 6px 16px;
+                            border-radius: 20px;
+                            font-size: 13px;
+                            font-weight: 600;
+                            cursor: pointer;
+                            color: inherit;
+                            transition: all 0.2s;
+                        }
+
+                        .tab-btn.active {
+                            background: white;
+                            color: #2563eb;
+                            border-color: #2563eb;
+                            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+                        }
+                        
+                        ${isDarkMode ? `
+                            .tab-btn.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+                        ` : ''}
                     `}</style>
 
                     {/* KML Uploader Modal */}

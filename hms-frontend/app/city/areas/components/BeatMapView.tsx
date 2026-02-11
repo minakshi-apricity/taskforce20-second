@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import "leaflet/dist/leaflet.css";
-import { X } from "lucide-react";
+import { MapPin, Search, Plus, Minus, FileText, X, Navigation, UserPlus } from "lucide-react";
+import AssignBeatModal from "./AssignBeatModal";
 
 // Dynamic imports for Leaflet
 const MapContainer = dynamic(() => import("react-leaflet").then((mod) => mod.MapContainer), { ssr: false });
@@ -51,155 +52,220 @@ const getFeatureColor = (feature: any) => {
     return VIBRANT_COLORS[Math.abs(hash) % VIBRANT_COLORS.length];
 };
 
+// Map Controller for panned navigation
+function MapController({ targetFeature }: { targetFeature: any | null }) {
+    const { useMap } = require("react-leaflet");
+    const map = useMap();
+
+    useEffect(() => {
+        if (targetFeature && map) {
+            const L = require("leaflet");
+            const geoLayer = L.geoJSON(targetFeature);
+            const bounds = geoLayer.getBounds();
+
+            if (targetFeature.geometry.type === "Point") {
+                map.setView(bounds.getCenter(), 18, { animate: true });
+            } else {
+                map.fitBounds(bounds, { padding: [100, 100], animate: true });
+            }
+        }
+    }, [targetFeature, map]);
+
+    return null;
+}
+
+// Map Zoom Handler
+function ZoomHandler() {
+    const { useMap } = require("react-leaflet");
+    const map = useMap();
+
+    useEffect(() => {
+        const handleZoomIn = () => map.zoomIn();
+        const handleZoomOut = () => map.zoomOut();
+
+        window.addEventListener("map-zoom-in", handleZoomIn);
+        window.addEventListener("map-zoom-out", handleZoomOut);
+
+        return () => {
+            window.removeEventListener("map-zoom-in", handleZoomIn);
+            window.removeEventListener("map-zoom-out", handleZoomOut);
+        };
+    }, [map]);
+
+    return null;
+}
+
 export default function BeatMapView({ beat, onClose }: BeatMapViewProps) {
     const [mapType, setMapType] = useState<"streets" | "satellite">("streets");
     const [hoveredFeature, setHoveredFeature] = useState<string | null>(null);
+    const [selectedFeature, setSelectedFeature] = useState<any | null>(null);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [showAssignModal, setShowAssignModal] = useState(false);
 
-    if (!beat.geometry) {
-        return (
-            <div style={{
-                position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
-                backgroundColor: "rgba(0,0,0,0.5)", zIndex: 1000,
-                display: "flex", justifyContent: "center", alignItems: "center"
-            }}>
-                <div style={{ backgroundColor: "white", padding: "24px", borderRadius: "12px", textAlign: "center" }}>
-                    <p>This beat has no geometry data.</p>
-                    <button className="btn btn-secondary" onClick={onClose}>Close</button>
-                </div>
-            </div>
-        );
-    }
+    if (!beat.geometry) return null;
 
     const features = beat.geometry?.features || [];
+    const filteredFeatures = features.filter((f: any) =>
+        (f.properties?.name || "").toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    const handleZoomIn = () => window.dispatchEvent(new CustomEvent("map-zoom-in"));
+    const handleZoomOut = () => window.dispatchEvent(new CustomEvent("map-zoom-out"));
 
     return (
         <div style={{
             position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
-            backgroundColor: "rgba(15, 23, 42, 0.8)", zIndex: 1000,
+            backgroundColor: "rgba(15, 23, 42, 0.85)", zIndex: 1000,
             display: "flex", justifyContent: "center", alignItems: "center",
-            backdropFilter: "blur(8px)"
+            backdropFilter: "blur(12px)"
         }}>
             <div style={{
-                width: "95%", maxWidth: "1400px", height: "90vh",
-                backgroundColor: "white", borderRadius: "24px", overflow: "hidden",
+                width: "98%", maxWidth: "1600px", height: "94vh",
+                backgroundColor: "white", borderRadius: "28px", overflow: "hidden",
                 position: "relative", display: "flex", flexDirection: "column",
-                boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)"
+                boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+                border: "1px solid rgba(255,255,255,0.1)"
             }}>
-                {/* Transparent Glassmorphism Header */}
+                {/* Pro Header */}
                 <div style={{
-                    padding: "20px 32px",
-                    borderBottom: "1px solid rgba(226, 232, 240, 0.8)",
+                    padding: "16px 32px",
+                    borderBottom: "1px solid #f1f5f9",
                     display: "flex", justifyContent: "space-between", alignItems: "center",
-                    backgroundColor: "rgba(255, 255, 255, 0.9)",
-                    backdropFilter: "blur(10px)",
+                    backgroundColor: "#fff",
                     zIndex: 10
                 }}>
-                    <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                            <div style={{ backgroundColor: "#2563eb", width: "4px", height: "24px", borderRadius: "2px" }} />
-                            <h3 style={{ margin: 0, fontSize: "1.5rem", fontWeight: 800, color: "#0f172a", letterSpacing: "-0.025em" }}>
-                                {beat.beatName} <span style={{ fontWeight: 400, color: "#94a3b8", fontSize: "1rem", marginLeft: "8px" }}>Interactive Beat Map</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+                        <div style={{ display: "flex", flexDirection: "column" }}>
+                            <h3 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: "8px" }}>
+                                <MapPin size={24} color="#2563eb" fill="#dbeafe" />
+                                {beat.beatName}
                             </h3>
+                            <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginTop: "2px" }}>
+                                {beat.zoneName} • {beat.wardName} • {beat.areaName}
+                            </div>
                         </div>
-                        <p style={{ margin: "4px 0 0 16px", fontSize: "0.875rem", color: "#64748b", fontWeight: 500 }}>
-                            {beat.zoneName} • {beat.wardName} • {beat.areaName}
-                        </p>
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                        <div style={{
-                            display: "flex",
-                            backgroundColor: "#f1f5f9",
-                            padding: "4px",
-                            borderRadius: "12px",
-                            border: "1px solid #e2e8f0"
-                        }}>
-                            <button
-                                onClick={() => setMapType("streets")}
-                                style={{
-                                    padding: "6px 16px", borderRadius: "8px", border: "none", fontSize: "0.75rem", fontWeight: 600,
-                                    backgroundColor: mapType === "streets" ? "white" : "transparent",
-                                    color: mapType === "streets" ? "#2563eb" : "#64748b",
-                                    boxShadow: mapType === "streets" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
-                                    cursor: "pointer", transition: "all 0.2s"
-                                }}
-                            >
-                                Streets
-                            </button>
-                            <button
-                                onClick={() => setMapType("satellite")}
-                                style={{
-                                    padding: "6px 16px", borderRadius: "8px", border: "none", fontSize: "0.75rem", fontWeight: 600,
-                                    backgroundColor: mapType === "satellite" ? "white" : "transparent",
-                                    color: mapType === "satellite" ? "#2563eb" : "#64748b",
-                                    boxShadow: mapType === "satellite" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
-                                    cursor: "pointer", transition: "all 0.2s"
-                                }}
-                            >
-                                Satellite
-                            </button>
+                        <div style={{ display: "flex", backgroundColor: "#f1f5f9", padding: "4px", borderRadius: "14px", border: "1px solid #e2e8f0" }}>
+                            {(["streets", "satellite"] as const).map(type => (
+                                <button
+                                    key={type}
+                                    onClick={() => setMapType(type)}
+                                    style={{
+                                        padding: "6px 16px", borderRadius: "10px", border: "none", fontSize: "0.75rem", fontWeight: 700,
+                                        backgroundColor: mapType === type ? "white" : "transparent",
+                                        color: mapType === type ? "#2563eb" : "#64748b",
+                                        boxShadow: mapType === type ? "0 2px 4px rgba(0,0,0,0.05)" : "none",
+                                        cursor: "pointer", transition: "all 0.2s", textTransform: "capitalize"
+                                    }}
+                                >
+                                    {type}
+                                </button>
+                            ))}
                         </div>
 
                         <button
                             onClick={onClose}
                             style={{
-                                width: "40px", height: "40px", borderRadius: "12px", border: "none",
-                                backgroundColor: "#f1f5f9", color: "#0f172a", cursor: "pointer",
+                                width: "44px", height: "44px", borderRadius: "14px", border: "none",
+                                backgroundColor: "#fef2f2", color: "#ef4444", cursor: "pointer",
                                 display: "flex", alignItems: "center", justifyContent: "center",
-                                transition: "background-color 0.2s"
+                                transition: "all 0.2s"
                             }}
-                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#e2e8f0"}
-                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#f1f5f9"}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#fee2e2"}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#fef2f2"}
                         >
-                            <X size={20} />
+                            <X size={22} />
                         </button>
                     </div>
                 </div>
 
-                <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-                    {/* Feature List Side Panel */}
+                <div style={{ flex: 1, display: "flex", overflow: "hidden", backgroundColor: "#f8fafc" }}>
+                    {/* Side Explorer */}
                     <div style={{
-                        width: "320px",
-                        borderRight: "1px solid #f1f5f9",
+                        width: "360px",
                         display: "flex",
                         flexDirection: "column",
-                        backgroundColor: "#fff"
+                        backgroundColor: "#fff",
+                        boxShadow: "10px 0 15px -10px rgba(0,0,0,0.05)",
+                        zIndex: 5
                     }}>
-                        <div style={{ padding: "20px", borderBottom: "1px solid #f1f5f9", backgroundColor: "#f8fafc" }}>
-                            <h4 style={{ margin: 0, fontSize: "0.875rem", fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                                Components ({features.length})
-                            </h4>
+                        <div style={{ padding: "24px 20px" }}>
+                            <div style={{ position: "relative" }}>
+                                <Search size={18} style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }} />
+                                <input
+                                    type="text"
+                                    placeholder="Search placemarks..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    style={{
+                                        width: "100%", padding: "12px 12px 12px 42px", borderRadius: "16px",
+                                        border: "1px solid #e2e8f0", backgroundColor: "#f8fafc", fontSize: "0.875rem",
+                                        transition: "border-color 0.2s"
+                                    }}
+                                />
+                            </div>
                         </div>
-                        <div style={{ flex: 1, overflowY: "auto", padding: "12px" }}>
-                            {features.map((f: any, i: number) => {
+
+                        <div style={{ flex: 1, overflowY: "auto", padding: "0 12px 20px" }}>
+                            <button
+                                onClick={() => setShowAssignModal(true)}
+                                style={{
+                                    width: "100%", padding: "14px", borderRadius: "16px",
+                                    border: "none", backgroundColor: "#2563eb", color: "white",
+                                    fontWeight: 700, fontSize: "0.875rem", cursor: "pointer",
+                                    display: "flex", alignItems: "center", justifyContent: "center", gap: "10px",
+                                    boxShadow: "0 10px 15px -3px rgba(37, 99, 235, 0.25)",
+                                    marginBottom: "12px"
+                                }}
+                            >
+                                <UserPlus size={18} />
+                                Manage Assignment
+                            </button>
+
+                            <div style={{ padding: "0 8px 12px", fontSize: "0.75rem", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase" }}>
+                                Found {filteredFeatures.length} Results
+                            </div>
+                            {filteredFeatures.map((f: any, i: number) => {
                                 const featureId = f.properties?.name || `feat-${i}`;
                                 const color = getFeatureColor(f);
-                                const isHovered = hoveredFeature === featureId;
+                                const isActive = selectedFeature?.properties?.name === featureId;
 
                                 return (
                                     <div
                                         key={i}
+                                        onClick={() => setSelectedFeature(f)}
                                         onMouseEnter={() => setHoveredFeature(featureId)}
                                         onMouseLeave={() => setHoveredFeature(null)}
                                         style={{
-                                            padding: "12px 16px",
-                                            borderRadius: "12px",
-                                            marginBottom: "8px",
+                                            padding: "16px",
+                                            borderRadius: "18px",
+                                            marginBottom: "10px",
                                             cursor: "pointer",
-                                            backgroundColor: isHovered ? "#eff6ff" : "white",
-                                            border: "1px solid",
-                                            borderColor: isHovered ? "#bfdbfe" : "transparent",
-                                            transition: "all 0.2s"
+                                            backgroundColor: isActive ? "#eff6ff" : (hoveredFeature === featureId ? "#f8fafc" : "transparent"),
+                                            border: "2px solid",
+                                            borderColor: isActive ? "#3b82f6" : "transparent",
+                                            transition: "all 0.2s",
+                                            boxShadow: isActive ? "0 4px 12px rgba(59, 130, 246, 0.15)" : "none"
                                         }}
                                     >
-                                        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                                            <div style={{ width: "12px", height: "12px", borderRadius: "3px", backgroundColor: color }} />
+                                        <div style={{ display: "flex", alignItems: "flex-start", gap: "14px" }}>
+                                            <div style={{
+                                                width: "40px", height: "40px", borderRadius: "12px",
+                                                backgroundColor: `${color}15`, color: color,
+                                                display: "flex", alignItems: "center", justifyContent: "center",
+                                                flexShrink: 0
+                                            }}>
+                                                {f.geometry?.type === "Point" ? <MapPin size={20} /> : <FileText size={20} />}
+                                            </div>
                                             <div style={{ flex: 1 }}>
-                                                <div style={{ fontSize: "0.875rem", fontWeight: 600, color: "#1e293b" }}>
+                                                <div style={{ fontSize: "0.935rem", fontWeight: 700, color: "#0f172a" }}>
                                                     {f.properties?.name || `Feature #${i + 1}`}
                                                 </div>
-                                                <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                                                    {f.geometry?.type}
+                                                <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "2px", display: "flex", alignItems: "center", gap: "6px" }}>
+                                                    <span style={{ padding: "2px 6px", backgroundColor: "#f1f5f9", borderRadius: "4px" }}>{f.geometry?.type}</span>
+                                                    • <span>{f.geometry?.type === "Point" ? "Marker" : "Path"}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -209,119 +275,154 @@ export default function BeatMapView({ beat, onClose }: BeatMapViewProps) {
                         </div>
                     </div>
 
-                    {/* Map Section */}
+                    {/* Premium Map Canvas */}
                     <div style={{ flex: 1, position: "relative" }}>
                         <MapContainer
                             center={[20.5937, 78.9629]}
                             zoom={5}
-                            zoomControl={false} // Custom zoom control position
-                            style={{ height: "100%", width: "100%" }}
+                            zoomControl={false}
+                            style={{ height: "100%", width: "100%", background: "#f1f5f9" }}
                         >
-                            <div className="leaflet-top leaflet-right" style={{ marginTop: "16px", marginRight: "16px" }}>
-                                <div className="leaflet-control leaflet-bar" style={{ border: "none", boxShadow: "0 4px 6px rgba(0,0,0,0.1)" }}>
-                                    <button onClick={() => { }} style={{ backgroundColor: "white", width: "36px", height: "36px", border: "none", borderBottom: "1px solid #f1f5f9", borderRadius: "8px 8px 0 0", fontSize: "20px", cursor: "pointer" }}>+</button>
-                                    <button onClick={() => { }} style={{ backgroundColor: "white", width: "36px", height: "36px", border: "none", borderRadius: "0 0 8px 8px", fontSize: "24px", cursor: "pointer" }}>-</button>
+                            <div className="leaflet-top leaflet-right" style={{ marginTop: "20px", marginRight: "20px" }}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                    <div style={{ display: "flex", flexDirection: "column", backgroundColor: "white", borderRadius: "14px", overflow: "hidden", boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)" }}>
+                                        <button onClick={handleZoomIn} style={{ padding: "12px", border: "none", backgroundColor: "white", cursor: "pointer", borderBottom: "1px solid #f1f5f9" }}><Plus size={18} /></button>
+                                        <button onClick={handleZoomOut} style={{ padding: "12px", border: "none", backgroundColor: "white", cursor: "pointer" }}><Minus size={18} /></button>
+                                    </div>
                                 </div>
                             </div>
 
                             {mapType === "streets" ? (
                                 <TileLayer
-                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+                                    attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
                                     url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
                                 />
                             ) : (
                                 <TileLayer
-                                    attribution='Map data &copy; <a href="https://www.google.com/intl/en-GB_ALL/help/terms_maps.html">Google</a>'
-                                    url="http://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+                                    attribution='Google'
+                                    url="http://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
                                 />
                             )}
 
                             <GeoJSON
-                                key={`${mapType}-${hoveredFeature}`} // Re-render triggers style update
+                                key={`${mapType}-${hoveredFeature}-${searchQuery}`}
                                 data={beat.geometry}
                                 style={(feature: any) => {
                                     const featureId = feature.properties?.name || "";
                                     const color = getFeatureColor(feature);
                                     const isHovered = hoveredFeature === featureId;
+                                    const isSelected = selectedFeature?.properties?.name === featureId;
 
                                     return {
                                         color: color,
-                                        weight: isHovered ? 6 : 3,
-                                        fillOpacity: isHovered ? 0.5 : 0.25,
+                                        weight: (isHovered || isSelected) ? 5 : 3,
+                                        fillOpacity: (isHovered || isSelected) ? 0.45 : 0.25,
                                         fillColor: color,
-                                        opacity: isHovered ? 1 : 0.8
+                                        opacity: 1,
+                                        dashArray: isHovered ? "5, 5" : ""
                                     };
                                 }}
+                                pointToLayer={(feature: any, latlng: any) => {
+                                    const L = require("leaflet");
+                                    const color = getFeatureColor(feature);
+                                    const icon = L.divIcon({
+                                        html: `
+                         <div style="
+                            position: relative;
+                            width: 32px; height: 32px;
+                            background: white;
+                            border: 3px solid ${color};
+                            border-radius: 50% 50% 50% 0;
+                            transform: rotate(-45deg);
+                            box-shadow: 0 4px 6px rgba(0,0,0,0.2)
+                         ">
+                            <div style="
+                               position: absolute; width: 10px; height: 10px;
+                               background: ${color}; border-radius: 50%;
+                               top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(45deg);
+                            "></div>
+                         </div>
+                      `,
+                                        className: "",
+                                        iconSize: [32, 32],
+                                        iconAnchor: [16, 32]
+                                    });
+                                    return L.marker(latlng, { icon });
+                                }}
                                 onEachFeature={(feature, layer) => {
-                                    const name = feature.properties?.name || "Unnamed Feature";
-                                    const type = feature.geometry?.type || "Unknown";
+                                    const name = feature.properties?.name || "Unnamed";
                                     const color = getFeatureColor(feature);
 
-                                    layer.on({
-                                        mouseover: (e) => setHoveredFeature(name),
-                                        mouseout: (e) => setHoveredFeature(null)
-                                    });
+                                    if (layer && typeof layer.on === "function") {
+                                        layer.on({
+                                            mouseover: () => setHoveredFeature(name),
+                                            mouseout: () => setHoveredFeature(null),
+                                            click: () => setSelectedFeature(feature)
+                                        });
+                                    }
 
-                                    layer.bindPopup(`
-                    <div style="font-family: 'Inter', sans-serif; padding: 4px; min-width: 200px;">
-                      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                         <div style="width: 12px; height: 12px; border-radius: 50%; background-color: ${color};"></div>
-                         <strong style="font-size: 15px; color: #0f172a;">${name}</strong>
+                                    if (layer && typeof layer.bindPopup === "function") {
+                                        layer.bindPopup(`
+                    <div style="font-family: 'Inter', sans-serif; padding: 10px; min-width: 220px;">
+                      <div style="color: ${color}; font-weight: 800; font-size: 16px; margin-bottom: 6px;">${name}</div>
+                      <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
+                      <div style="display: grid; gap: 4px; font-size: 13px; color: #475569;">
+                        <div><strong>Geometry:</strong> ${feature.geometry.type}</div>
+                        <div><strong>Beat:</strong> ${beat.beatName}</div>
                       </div>
-                      <div style="background: #f8fafc; padding: 8px; border-radius: 8px; font-size: 12px; color: #64748b;">
-                        <div style="margin-bottom: 4px;"><strong>Type:</strong> ${type}</div>
-                        <div><strong>Parent Beat:</strong> ${beat.beatName}</div>
-                      </div>
+                      <div style="margin-top: 12px; font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase;">GIS Metadata Connected</div>
                     </div>
-                  `, {
-                                        className: 'modern-popup'
-                                    });
+                  `, { className: 'modern-popup' });
+                                    }
                                 }}
                             />
+                            <MapController targetFeature={selectedFeature} />
                             <FitBounds geometry={beat.geometry} />
+                            <ZoomHandler />
                         </MapContainer>
 
-                        {/* GIS Stats Overlay */}
+                        {/* Float HUD */}
                         <div style={{
-                            position: "absolute",
-                            bottom: "32px",
-                            left: "32px",
-                            backgroundColor: "rgba(15, 23, 42, 0.9)",
-                            color: "white",
-                            padding: "16px 24px",
-                            borderRadius: "16px",
-                            zIndex: 1000,
-                            backdropFilter: "blur(4px)",
-                            border: "1px solid rgba(255,255,255,0.1)",
-                            boxShadow: "0 10px 15px -3px rgba(0,0,0,0.3)"
+                            position: "absolute", bottom: "40px", right: "40px",
+                            backgroundColor: "white", padding: "12px 24px", borderRadius: "20px",
+                            boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1)",
+                            display: "flex", gap: "24px", alignItems: "center",
+                            zIndex: 1000, border: "1px solid #f1f5f9"
                         }}>
-                            <div style={{ display: "flex", gap: "32px" }}>
-                                <div>
-                                    <div style={{ fontSize: "0.75rem", color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Total Features</div>
-                                    <div style={{ fontSize: "1.25rem", fontWeight: 800 }}>{features.length}</div>
-                                </div>
-                                <div style={{ borderLeft: "1px solid rgba(255,255,255,0.2)", paddingLeft: "32px" }}>
-                                    <div style={{ fontSize: "0.75rem", color: "#94a3b8", fontWeight: 600, textTransform: "uppercase" }}>Coordinate System</div>
-                                    <div style={{ fontSize: "1rem", fontWeight: 700 }}>EPSG:4326 (WGS84)</div>
-                                </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <div style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: "#10b981", animation: "pulse 2s infinite" }} />
+                                <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "#1e293b" }}>Real-time GIS Sync</span>
+                            </div>
+                            <div style={{ width: "1px", height: "24px", backgroundColor: "#f1f5f9" }} />
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#64748b" }}>Projection:</span>
+                                <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "#3b82f6" }}>EPSG 4326</span>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
+            {showAssignModal && (
+                <AssignBeatModal
+                    beat={beat}
+                    onClose={() => setShowAssignModal(false)}
+                    onSuccess={() => {
+                        setShowAssignModal(false);
+                        // Optional: refresh data
+                    }}
+                />
+            )}
+
             <style jsx global>{`
-        .leaflet-container {
-          background-color: #f1f5f9;
+        @keyframes pulse {
+          0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+          70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
         }
-        .modern-popup .leaflet-popup-content-wrapper {
-          border-radius: 16px;
-          padding: 4px;
-          box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
-        }
-        .modern-popup .leaflet-popup-tip {
-          box-shadow: none;
-        }
+        .leaflet-container { background: #f8fafc !important; }
+        .modern-popup .leaflet-popup-content-wrapper { border-radius: 20px; border: 1px solid #f1f5f9; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.15); }
+        .modern-popup .leaflet-popup-tip-container { display: none; }
       `}</style>
         </div>
     );

@@ -106,6 +106,7 @@ model User {
   toiletAssignments               ToiletAssignment[]      @relation("ToiletAssignmentTo")
   cities                          UserCity[]
   modules                         UserModuleRole[]
+  assignedBeats                   CityAreaBeat[]          @relation("BeatAssignedTo")
 }
 
 model UserCity {
@@ -665,10 +666,13 @@ model CityAreaBeat {
   updatedAt  DateTime  @updatedAt
   deletedAt  DateTime?
 
-  city       City      @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  assignedToId String?   @db.Uuid
+  city         City      @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  assignedTo   User?     @relation("BeatAssignedTo", fields: [assignedToId], references: [id])
 
   @@index([cityId])
   @@index([areaId])
   @@index([beatName])
+  @@index([assignedToId])
   @@map("CityAreaBeat")
 }

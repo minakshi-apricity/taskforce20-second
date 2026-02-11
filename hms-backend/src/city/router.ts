@@ -980,4 +980,157 @@ router.delete("/areas/:id", async (req, res, next) => {
   }
 });
 
+router.get("/areas/:id/potential-assignees", async (req, res, next) => {
+  try {
+    const cityId = req.auth!.cityId!;
+    const { id } = req.params;
+
+    const beat = await prisma.cityAreaBeat.findUnique({ where: { id } });
+    if (!beat || beat.cityId !== cityId) throw new HttpError(404, "Beat not found");
+
+    // Fetch QC users from City-level assignments
+    const records = await prisma.userCity.findMany({
+      where: { cityId, role: Role.QC },
+      include: {
+        user: {
+          include: {
+            modules: { where: { cityId } }
+          }
+        }
+      }
+    });
+
+    // Fetch QC users from Module-level assignments
+    const moduleRecords = await prisma.userModuleRole.findMany({
+      where: { cityId, role: Role.QC },
+      include: {
+        user: {
+          include: {
+            cities: { where: { cityId } },
+            modules: { where: { cityId } }
+          }
+        }
+      }
+    });
+
+    const targetZoneId = String(beat.zoneId);
+    const targetWardId = String(beat.wardId);
+    const allUsersMap = new Map();
+
+    const processRecord = (user: any, roles: any[]) => {
+      if (!user) return;
+      const userId = user.id;
+
+      const zoneIds = new Set<string>();
+      const wardIds = new Set<string>();
+
+      // Combine all geo scopes from various assignments
+      roles.forEach(r => {
+        (r.zoneIds || []).forEach((z: any) => zoneIds.add(String(z)));
+        (r.wardIds || []).forEach((w: any) => wardIds.add(String(w)));
+      });
+
+      const matchesContext = zoneIds.has(targetZoneId) || wardIds.has(targetWardId);
+
+      if (!allUsersMap.has(userId)) {
+        allUsersMap.set(userId, {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          role: "QC",
+          assignedZones: Array.from(zoneIds),
+          assignedWards: Array.from(wardIds),
+          matchesContext
+        });
+      } else {
+        const existing = allUsersMap.get(userId);
+        if (matchesContext) existing.matchesContext = true;
+
+        zoneIds.forEach(z => {
+          if (!existing.assignedZones.includes(z)) existing.assignedZones.push(z);
+        });
+        wardIds.forEach(w => {
+          if (!existing.assignedWards.includes(w)) existing.assignedWards.push(w);
+        });
+      }
+    };
+
+    records.forEach(r => processRecord(r.user, [r, ...r.user.modules]));
+    moduleRecords.forEach(r => processRecord(r.user, [r, ...(r.user.cities || []), ...(r.user.modules || [])]));
+
+    const result = Array.from(allUsersMap.values()).sort((a, b) => {
+      if (a.matchesContext && !b.matchesContext) return -1;
+      if (!a.matchesContext && b.matchesContext) return 1;
+      return (a.name || "").localeCompare(b.name || "");
+    });
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/areas/:id/assign", async (req, res, next) => {
+  try {
+    const cityId = req.auth!.cityId!;
+    const { id } = req.params;
+    const { userId } = req.body;
+
+    if (!userId) throw new HttpError(400, "User ID required");
+
+    const beat = await prisma.cityAreaBeat.findUnique({ where: { id } });
+    if (!beat || beat.cityId !== cityId) throw new HttpError(404, "Beat not found");
+
+    // Optional: Verify user exists and has QC role in this city
+    const qcUser = await prisma.userCity.findUnique({
+      where: { userId_cityId_role: { userId, cityId, role: "QC" } }
+    });
+    if (!qcUser) throw new HttpError(400, "User is not a QC assigned to this city");
+
+    const updated = await prisma.cityAreaBeat.update({
+      where: { id },
+      data: { assignedToId: userId }
+    });
+
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/areas/my-beats", async (req, res, next) => {
+  try {
+    const userId = req.auth!.sub;
+    const cityId = req.auth!.cityId!;
+
+    const beats = await prisma.cityAreaBeat.findMany({
+      where: {
+        cityId,
+        assignedToId: userId,
+        deletedAt: null
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    const nodeIds = Array.from(new Set(beats.flatMap(b => [b.zoneId, b.wardId, b.areaId])));
+    const nodes = await prisma.geoNode.findMany({
+      where: { id: { in: nodeIds } },
+      select: { id: true, name: true }
+    });
+    const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n.name]));
+
+    const result = beats.map(b => ({
+      ...b,
+      zoneName: nodeMap[b.zoneId] || "Unknown",
+      wardName: nodeMap[b.wardId] || "Unknown",
+      areaName: nodeMap[b.areaId] || "Unknown",
+    }));
+
+    res.json({ beats: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

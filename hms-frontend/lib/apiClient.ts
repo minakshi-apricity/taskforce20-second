@@ -110,7 +110,13 @@ export const AreaBeatApi = {
       body: formData,
       headers: {}
     }),
-  remove: (id: string) => apiFetch<{ success: boolean }>(`/city/areas/${id}`, { method: "DELETE" })
+  remove: (id: string) => apiFetch<{ success: boolean }>(`/city/areas/${id}`, { method: "DELETE" }),
+  listPotentialAssignees: (id: string) => apiFetch<any[]>(`/city/areas/${id}/potential-assignees`),
+  assign: (id: string, userId: string) =>
+    apiFetch(`/city/areas/${id}/assign`, {
+      method: "POST",
+      body: JSON.stringify({ userId })
+    })
 };
 
 export const PublicGeoApi = {
