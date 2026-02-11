@@ -45,6 +45,7 @@ model City {
   toilets               Toilet[]
   toiletInspections     ToiletInspection[]
   toiletAssignments     ToiletAssignment[]
+  cityAreaBeats         CityAreaBeat[]
 
   @@index([hmsId])
 }
@@ -649,4 +650,25 @@ enum IECStatus {
   SUBMITTED
   APPROVED
   REJECTED
+}
+
+model CityAreaBeat {
+  id         String    @id @default(uuid()) @db.Uuid
+  cityId     String    @db.Uuid
+  zoneId     String    @db.Uuid
+  wardId     String    @db.Uuid
+  areaId     String    @db.Uuid
+  beatName   String
+  geometry   Json?     // Storing as GeoJSON
+  rawKml     String?   @db.Text
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+
+  city       City      @relation(fields: [cityId], references: [id], onDelete: Cascade)
+
+  @@index([cityId])
+  @@index([areaId])
+  @@index([beatName])
+  @@map("CityAreaBeat")
 }

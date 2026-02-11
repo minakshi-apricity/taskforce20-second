@@ -11,6 +11,11 @@ import { CANONICAL_MODULE_KEYS, getModuleLabel, isCanonicalModuleKey, normalizeM
 import { resolveCanWrite } from "../utils/moduleAccess";
 import { syncCityModules } from "../utils/cityModuleSync";
 import { getQcScope } from "../utils/qcScope";
+import multer from "multer";
+import { parseKML } from "../utils/kmlParser";
+import fs from "fs";
+
+const upload = multer({ dest: "uploads/" });
 
 const router = Router();
 router.use(authenticate, requireCityContext());
@@ -820,6 +825,153 @@ router.post("/registration-requests/:id/reject", async (req, res, next) => {
         rejectedAt: new Date(),
         rejectReason: reason
       }
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/areas", upload.single("kmlFile"), async (req, res, next) => {
+  try {
+    const cityId = req.auth!.cityId!;
+    const { zoneId, wardId, areaId, beatName } = req.body;
+    const file = req.file;
+
+    if (!zoneId || !wardId || !areaId || !beatName) {
+      throw new HttpError(400, "Required fields missing");
+    }
+
+    // Validate beat name uniqueness within area
+    const exists = await prisma.cityAreaBeat.findFirst({
+      where: { areaId, beatName, deletedAt: null }
+    });
+    if (exists) throw new HttpError(400, "Beat name must be unique within the area");
+
+    let geometry = null;
+    let rawKml = null;
+
+    if (file) {
+      if (!file.originalname.toLowerCase().endsWith(".kml")) {
+        fs.unlinkSync(file.path);
+        throw new HttpError(400, "Only .kml files allowed");
+      }
+      const kmlContent = fs.readFileSync(file.path, "utf-8");
+      rawKml = kmlContent;
+      const parsed = parseKML(kmlContent);
+      if (parsed) {
+        geometry = parsed;
+      }
+      // Clean up temp file
+      fs.unlinkSync(file.path);
+    }
+
+    const created = await prisma.cityAreaBeat.create({
+      data: {
+        cityId,
+        zoneId,
+        wardId,
+        areaId,
+        beatName,
+        geometry: geometry as any,
+        rawKml
+      }
+    });
+
+    res.json(created);
+  } catch (err) {
+    if (req.file) fs.unlinkSync(req.file.path);
+    next(err);
+  }
+});
+
+router.get("/areas", async (req, res, next) => {
+  try {
+    const cityId = req.auth!.cityId!;
+    const beats = await prisma.cityAreaBeat.findMany({
+      where: { cityId, deletedAt: null },
+      orderBy: { createdAt: "desc" }
+    });
+
+    const nodeIds = Array.from(new Set(beats.flatMap(b => [b.zoneId, b.wardId, b.areaId])));
+    const nodes = await prisma.geoNode.findMany({
+      where: { id: { in: nodeIds } },
+      select: { id: true, name: true }
+    });
+    const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n.name]));
+
+    const result = beats.map(b => ({
+      ...b,
+      zoneName: nodeMap[b.zoneId] || "Unknown",
+      wardName: nodeMap[b.wardId] || "Unknown",
+      areaName: nodeMap[b.areaId] || "Unknown",
+    }));
+
+    res.json({ beats: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/areas/:id", upload.single("kmlFile"), async (req, res, next) => {
+  try {
+    const cityId = req.auth!.cityId!;
+    const { id } = req.params;
+    const { beatName } = req.body;
+    const file = req.file;
+
+    const existing = await prisma.cityAreaBeat.findUnique({ where: { id } });
+    if (!existing || existing.cityId !== cityId) throw new HttpError(404, "Beat not found");
+
+    const data: any = {};
+    if (beatName) {
+      // Check if new beat name is unique in the same area
+      const duplicate = await prisma.cityAreaBeat.findFirst({
+        where: { areaId: existing.areaId, beatName, NOT: { id }, deletedAt: null }
+      });
+      if (duplicate) throw new HttpError(400, "Beat name must be unique within the area");
+      data.beatName = beatName;
+    }
+
+    if (file) {
+      if (!file.originalname.toLowerCase().endsWith(".kml")) {
+        fs.unlinkSync(file.path);
+        throw new HttpError(400, "Only .kml files allowed");
+      }
+      const kmlContent = fs.readFileSync(file.path, "utf-8");
+      data.rawKml = kmlContent;
+      const parsed = parseKML(kmlContent);
+      if (parsed) {
+        data.geometry = parsed;
+      }
+      fs.unlinkSync(file.path);
+    }
+
+    const updated = await prisma.cityAreaBeat.update({
+      where: { id },
+      data
+    });
+
+    res.json(updated);
+  } catch (err) {
+    if (req.file) fs.unlinkSync(req.file.path);
+    next(err);
+  }
+});
+
+router.delete("/areas/:id", async (req, res, next) => {
+  try {
+    const cityId = req.auth!.cityId!;
+    const { id } = req.params;
+
+    const existing = await prisma.cityAreaBeat.findUnique({ where: { id } });
+    if (!existing || existing.cityId !== cityId) throw new HttpError(404, "Beat not found");
+
+    // Soft delete
+    await prisma.cityAreaBeat.update({
+      where: { id },
+      data: { deletedAt: new Date() }
     });
 
     res.json({ success: true });

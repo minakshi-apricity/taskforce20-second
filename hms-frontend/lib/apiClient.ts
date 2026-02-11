@@ -11,18 +11,21 @@ export class ApiError extends Error {
   }
 }
 
-async function buildHeaders(initHeaders?: HeadersInit) {
+async function buildHeaders(initHeaders?: HeadersInit, isFormData?: boolean) {
   const token = getTokenFromCookies();
-  const headers: HeadersInit = {
-    "Content-Type": "application/json",
+  const headers: any = {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...initHeaders
   };
+  if (!isFormData) {
+    headers["Content-Type"] = "application/json";
+  }
   return headers;
 }
 
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = await buildHeaders(init.headers);
+  const isFormData = init.body instanceof FormData;
+  const headers = await buildHeaders(init.headers, isFormData);
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers,
@@ -91,6 +94,23 @@ export const GeoApi = {
   update: (id: string, body: any) =>
     apiFetch<{ node: any }>(`/city/geo/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   remove: (id: string) => apiFetch<{ success: boolean }>(`/city/geo/${id}`, { method: "DELETE" })
+};
+
+export const AreaBeatApi = {
+  list: () => apiFetch<{ beats: any[] }>("/city/areas"),
+  create: (formData: FormData) =>
+    apiFetch<{ id: string }>("/city/areas", {
+      method: "POST",
+      body: formData,
+      headers: {} // Multi-part handled by browser
+    }),
+  update: (id: string, formData: FormData) =>
+    apiFetch<{ id: string }>(`/city/areas/${id}`, {
+      method: "PUT",
+      body: formData,
+      headers: {}
+    }),
+  remove: (id: string) => apiFetch<{ success: boolean }>(`/city/areas/${id}`, { method: "DELETE" })
 };
 
 export const PublicGeoApi = {

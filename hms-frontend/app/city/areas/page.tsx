@@ -1,712 +1,153 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ApiError, GeoApi } from "@lib/apiClient";
+import React, { useState, useEffect, useCallback } from "react";
+import BeatForm from "./components/BeatForm";
+import BeatTable from "./components/BeatTable";
+import EditBeatModal from "./components/EditBeatModal";
+import KMLDataViewer from "./components/KMLDataViewer";
+import AssignBeatModal from "./components/AssignBeatModal";
+import { AreaBeatApi } from "@lib/apiClient";
+import { MapPin, Info } from "lucide-react";
 import dynamic from "next/dynamic";
-import KMLUploader, { ParsedKMLData } from "../../qc/beats/components/KMLUploader";
-import BeatPreviewPanel from "../../qc/beats/components/BeatPreviewPanel";
-import { Upload, MapPin } from "lucide-react";
-import "leaflet/dist/leaflet.css";
 
-type GeoNode = { id: string; name: string; parentId?: string | null; level: string; areaType?: string };
-
-const AREA_TYPES = [
-  { label: "Residential", value: "RESIDENTIAL" },
-  { label: "Commercial", value: "COMMERCIAL" },
-  { label: "Slum", value: "SLUM" }
-];
-
-interface EditState {
-  id: string;
-  name: string;
-  areaType?: string;
-}
-
-// Dynamic imports for Leaflet components
-const MapContainer = dynamic(() => import("react-leaflet").then((mod) => mod.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import("react-leaflet").then((mod) => mod.TileLayer), { ssr: false });
-const Polyline = dynamic(() => import("react-leaflet").then((mod) => mod.Polyline), { ssr: false });
-const Popup = dynamic(() => import("react-leaflet").then((mod) => mod.Popup), { ssr: false });
+const BeatMapView = dynamic(() => import("./components/BeatMapView"), { ssr: false });
 
 export default function AreasPage() {
-  const [zones, setZones] = useState<GeoNode[]>([]);
-  const [wards, setWards] = useState<GeoNode[]>([]);
-  const [areas, setAreas] = useState<GeoNode[]>([]);
-  const [beats, setBeats] = useState<GeoNode[]>([]);
+  const [beats, setBeats] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [viewingBeat, setViewingBeat] = useState<any | null>(null);
+  const [editingBeat, setEditingBeat] = useState<any | null>(null);
+  const [inspectingBeat, setInspectingBeat] = useState<any | null>(null);
+  const [assigningBeat, setAssigningBeat] = useState<any | null>(null);
 
-  // Create Area
-  const [zoneForArea, setZoneForArea] = useState("");
-  const [wardForArea, setWardForArea] = useState("");
-  const [areaName, setAreaName] = useState("");
-  const [areaType, setAreaType] = useState("");
-  const [areaStatus, setAreaStatus] = useState("");
-  const [savingArea, setSavingArea] = useState(false);
-
-  // Create Beat
-  const [zoneForBeat, setZoneForBeat] = useState("");
-  const [wardForBeat, setWardForBeat] = useState("");
-  const [areaForBeat, setAreaForBeat] = useState("");
-  const [beatName, setBeatName] = useState("");
-  const [beatStatus, setBeatStatus] = useState("");
-  const [savingBeat, setSavingBeat] = useState(false);
-
-  // KML Upload states
-  const [showKMLUploader, setShowKMLUploader] = useState(false);
-  const [uploadedKMLData, setUploadedKMLData] = useState<ParsedKMLData | null>(null);
-  const [tempBeatOnMap, setTempBeatOnMap] = useState<any>(null);
-
-  // Edit / Delete
-  const [editing, setEditing] = useState<EditState | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState("");
-
-  const loadGeo = async () => {
+  const loadBeats = useCallback(async () => {
     try {
       setLoading(true);
-      setError("");
-      const [zonesRes, wardsRes, areasRes, beatsRes] = await Promise.all([
-        GeoApi.list("ZONE"),
-        GeoApi.list("WARD"),
-        GeoApi.list("AREA"),
-        GeoApi.list("BEAT")
-      ]);
-      setZones((zonesRes as any).nodes ?? []);
-      setWards((wardsRes as any).nodes ?? []);
-      setAreas((areasRes as any).nodes ?? []);
-      setBeats((beatsRes as any).nodes ?? []);
+      const res = await AreaBeatApi.list();
+      setBeats(res.beats || []);
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to load hierarchy";
-      setError(msg);
+      console.error("Failed to load beats", err);
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadGeo();
   }, []);
 
-  const wardsByZone = useMemo(() => {
-    const map: Record<string, GeoNode[]> = {};
-    wards.forEach((w) => {
-      if (!w.parentId) return;
-      map[w.parentId] = map[w.parentId] || [];
-      map[w.parentId].push(w);
-    });
-    return map;
-  }, [wards]);
-
-  const areasByWard = useMemo(() => {
-    const map: Record<string, GeoNode[]> = {};
-    areas.forEach((a) => {
-      if (!a.parentId) return;
-      map[a.parentId] = map[a.parentId] || [];
-      map[a.parentId].push(a);
-    });
-    return map;
-  }, [areas]);
-
-  const beatsByArea = useMemo(() => {
-    const map: Record<string, GeoNode[]> = {};
-    beats.forEach((b) => {
-      if (!b.parentId) return;
-      map[b.parentId] = map[b.parentId] || [];
-      map[b.parentId].push(b);
-    });
-    return map;
-  }, [beats]);
-
-  const availableWardsForArea = zoneForArea ? wardsByZone[zoneForArea] || [] : [];
-  const availableWardsForBeat = zoneForBeat ? wardsByZone[zoneForBeat] || [] : [];
-  const availableAreasForBeat = wardForBeat ? areasByWard[wardForBeat] || [] : [];
-
-  const handleCreateArea = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!zoneForArea || !wardForArea || !areaName || !areaType) return;
-    setSavingArea(true);
-    setAreaStatus("Saving...");
-    try {
-      await GeoApi.create({ level: "AREA", name: areaName, parentId: wardForArea, areaType });
-      setAreaStatus("Area created");
-      setAreaName("");
-      setAreaType("");
-      await loadGeo();
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to create area";
-      setAreaStatus(msg);
-    } finally {
-      setSavingArea(false);
-    }
-  };
-
-  const handleCreateBeat = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!zoneForBeat || !wardForBeat || !areaForBeat || !beatName) return;
-    setSavingBeat(true);
-    setBeatStatus("Saving...");
-    try {
-      await GeoApi.create({ level: "BEAT", name: beatName, parentId: areaForBeat });
-      setBeatStatus("Beat created");
-      setBeatName("");
-      await loadGeo();
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to create beat";
-      setBeatStatus(msg);
-    } finally {
-      setSavingBeat(false);
-    }
-  };
-
-  // Handle KML Upload
-  const handleKMLParsed = (data: ParsedKMLData) => {
-    setUploadedKMLData(data);
-    setShowKMLUploader(false);
-
-    // Auto-populate beat name from KML if empty
-    if (!beatName && data.name) {
-      setBeatName(data.name);
-    }
-
-    // Create temporary beat object for map display
-    const tempBeat = {
-      id: "TEMP-KML",
-      name: data.name,
-      coordinates: data.coordinates,
-      status: "New Upload",
-      color: "#8b5cf6",
-    };
-
-    setTempBeatOnMap(tempBeat);
-  };
-
-  const handleSaveBeatWithKML = async () => {
-    if (!zoneForBeat || !wardForBeat || !areaForBeat || !beatName || !uploadedKMLData) return;
-
-    setSavingBeat(true);
-    setBeatStatus("Saving beat with KML data...");
-
-    try {
-      // TODO: Update API to accept coordinates
-      // For now, we'll create the beat without coordinates
-      // In production, you should modify the API to accept:
-      // { level: "BEAT", name: beatName, parentId: areaForBeat, coordinates: uploadedKMLData.coordinates }
-
-      await GeoApi.create({
-        level: "BEAT",
-        name: beatName,
-        parentId: areaForBeat
-        // coordinates: uploadedKMLData.coordinates // Add this when backend supports it
-      });
-
-      setBeatStatus("Beat created successfully!");
-      setBeatName("");
-      setUploadedKMLData(null);
-      setTempBeatOnMap(null);
-      await loadGeo();
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "Failed to create beat with KML";
-      setBeatStatus(msg);
-    } finally {
-      setSavingBeat(false);
-    }
-  };
-
-  const handleCancelKML = () => {
-    setUploadedKMLData(null);
-    setTempBeatOnMap(null);
-  };
-
-  const startEdit = (node: GeoNode) => {
-    setEditing({ id: node.id, name: node.name, areaType: node.areaType });
-  };
-
-  const cancelEdit = () => {
-    setEditing(null);
-  };
-
-  const saveEdit = async (node: GeoNode) => {
-    if (!editing) return;
-    setBusyId(node.id);
-    try {
-      const payload: any = {};
-      if (editing.name && editing.name !== node.name) payload.name = editing.name;
-      if (node.level === "AREA" && editing.areaType && editing.areaType !== node.areaType) {
-        payload.areaType = editing.areaType;
-      }
-      if (Object.keys(payload).length === 0) {
-        setEditing(null);
-        setBusyId(null);
-        return;
-      }
-      await GeoApi.update(node.id, payload);
-      setEditing(null);
-      await loadGeo();
-    } catch (err) {
-      alert(err instanceof ApiError ? err.message : "Failed to update");
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const deleteNode = async (node: GeoNode) => {
-    if (!confirm("Delete this item? Children will block deletion.")) return;
-    setBusyId(node.id);
-    setDeleteError("");
-    try {
-      await GeoApi.remove(node.id);
-      await loadGeo();
-    } catch (err) {
-      setDeleteError(err instanceof ApiError ? err.message : "Delete failed");
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const renderActions = (node: GeoNode) => {
-    const isEditing = editing?.id === node.id;
-    return (
-      <div style={{ display: "flex", gap: 8 }}>
-        {!isEditing && (
-          <>
-            <button className="btn btn-secondary btn-sm" onClick={() => startEdit(node)} disabled={busyId === node.id}>
-              ✏️
-            </button>
-            <button className="btn btn-danger btn-sm" onClick={() => deleteNode(node)} disabled={busyId === node.id}>
-              🗑️
-            </button>
-          </>
-        )}
-        {isEditing && (
-          <>
-            <button className="btn btn-primary btn-sm" onClick={() => saveEdit(node)} disabled={busyId === node.id}>
-              ✔️
-            </button>
-            <button className="btn btn-secondary btn-sm" onClick={cancelEdit} disabled={busyId === node.id}>
-              ✖️
-            </button>
-          </>
-        )}
-      </div>
-    );
-  };
-
-  const renderHierarchy = () => {
-    if (loading) return <div className="skeleton" style={{ height: 80 }} />;
-    if (error) return <div className="alert error">{error}</div>;
-    if (zones.length === 0) return <div className="muted">No hierarchy yet.</div>;
-
-    const editField = (node: GeoNode) => {
-      const isEditing = editing?.id === node.id;
-      if (!isEditing) return null;
-      return (
-        <div style={{ display: "grid", gap: 6, maxWidth: 260, marginTop: 8 }}>
-          <input
-            className="input"
-            value={editing?.name || ""}
-            onChange={(e) => setEditing((prev) => (prev ? { ...prev, name: e.target.value } : prev))}
-          />
-          {node.level === "AREA" && (
-            <select
-              className="input"
-              value={editing?.areaType || ""}
-              onChange={(e) => setEditing((prev) => (prev ? { ...prev, areaType: e.target.value } : prev))}
-            >
-              <option value="">Select area type</option>
-              {AREA_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-      );
-    };
-
-    return (
-      <div style={{ display: "grid", gap: 12 }}>
-        {zones.map((z) => (
-          <div key={z.id} className="card" style={{ borderColor: "#e5e7eb" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <div style={{ fontWeight: 700 }}>{z.name}</div>
-                <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-                  {z.id}
-                </div>
-              </div>
-              {renderActions(z)}
-            </div>
-            {editField(z)}
-            {(wardsByZone[z.id] || []).map((w) => (
-              <div key={w.id} style={{ marginLeft: 12, paddingLeft: 12, borderLeft: "2px solid #e5e7eb" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{w.name}</div>
-                    <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
-                      {w.id}
-                    </div>
-                  </div>
-                  {renderActions(w)}
-                </div>
-                {editField(w)}
-                {(areasByWard[w.id] || []).map((a) => (
-                  <div key={a.id} style={{ marginLeft: 12, paddingLeft: 12, borderLeft: "2px dashed #e5e7eb" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div>
-                        <div>
-                          <strong>{a.name}</strong> ({a.areaType || "—"})
-                        </div>
-                        <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
-                          {a.id}
-                        </div>
-                      </div>
-                      {renderActions(a)}
-                    </div>
-                    {editField(a)}
-                    {(beatsByArea[a.id] || []).map((b) => (
-                      <div
-                        key={b.id}
-                        style={{ marginLeft: 12, paddingLeft: 12, borderLeft: "1px dotted #cbd5e1" }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <div>
-                            <div>{b.name}</div>
-                            <div className="muted" style={{ fontSize: 12 }}>
-                              {b.id}
-                            </div>
-                          </div>
-                          {renderActions(b)}
-                        </div>
-                        {editField(b)}
-                      </div>
-                    ))}
-                    {(beatsByArea[a.id] || []).length === 0 && (
-                      <div className="muted" style={{ marginLeft: 12, fontSize: 12 }}>
-                        No beats
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {(areasByWard[w.id] || []).length === 0 && (
-                  <div className="muted" style={{ marginLeft: 12, fontSize: 12 }}>
-                    No areas
-                  </div>
-                )}
-              </div>
-            ))}
-            {(wardsByZone[z.id] || []).length === 0 && (
-              <div className="muted" style={{ marginLeft: 12, fontSize: 12 }}>
-                No wards
-              </div>
-            )}
-          </div>
-        ))}
-        {deleteError && <div className="alert error">{deleteError}</div>}
-      </div>
-    );
-  };
+  useEffect(() => {
+    loadBeats();
+  }, [loadBeats]);
 
   return (
-    <div className="page">
-      <div className="card">
-        <div className="breadcrumb">
-          <span>City Admin</span>
-          <span>/</span>
-          <span>Area & Beat Management</span>
-        </div>
-        <h2 style={{ marginBottom: 4 }}>Area & Beat Management</h2>
-        <p className="muted">Manage area types and beats under wards for the active city.</p>
-      </div>
-
-      <div className="grid grid-2">
-        <div className="card">
-          <h3>Area</h3>
-          <p className="muted" style={{ marginTop: -6 }}>
-            Define an area name and type under a ward.
-          </p>
-          <form onSubmit={handleCreateArea} className="form">
-            <label>Select Zone</label>
-            <select
-              className="input"
-              value={zoneForArea}
-              onChange={(e) => {
-                setZoneForArea(e.target.value);
-                setWardForArea("");
-              }}
-              required
-              disabled={zones.length === 0}
-            >
-              <option value="">Select zone</option>
-              {zones.map((z) => (
-                <option key={z.id} value={z.id}>
-                  {z.name}
-                </option>
-              ))}
-            </select>
-
-            <label>Select Ward</label>
-            <select
-              className="input"
-              value={wardForArea}
-              onChange={(e) => setWardForArea(e.target.value)}
-              required
-              disabled={!zoneForArea || availableWardsForArea.length === 0}
-            >
-              <option value="">Select ward</option>
-              {availableWardsForArea.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-
-            <label>Area Name</label>
-            <input
-              className="input"
-              value={areaName}
-              onChange={(e) => setAreaName(e.target.value)}
-              required
-              disabled={!wardForArea}
-            />
-
-            <label>Area Type</label>
-            <select
-              className="input"
-              value={areaType}
-              onChange={(e) => setAreaType(e.target.value)}
-              required
-              disabled={!wardForArea}
-            >
-              <option value="">Select area type</option>
-              {AREA_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-
-            <button
-              className="btn btn-primary"
-              type="submit"
-              disabled={!zoneForArea || !wardForArea || !areaName || !areaType || savingArea}
-            >
-              {savingArea ? "Saving..." : "Create Area"}
-            </button>
-            {areaStatus && <div className="muted">{areaStatus}</div>}
-          </form>
-        </div>
-
-        <div className="card">
-          <h3>Beat</h3>
-          <p className="muted" style={{ marginTop: -6 }}>
-            Create beats under area names.
-          </p>
-          <form onSubmit={handleCreateBeat} className="form">
-            <label>Select Zone</label>
-            <select
-              className="input"
-              value={zoneForBeat}
-              onChange={(e) => {
-                setZoneForBeat(e.target.value);
-                setWardForBeat("");
-                setAreaForBeat("");
-              }}
-              required
-              disabled={zones.length === 0}
-            >
-              <option value="">Select zone</option>
-              {zones.map((z) => (
-                <option key={z.id} value={z.id}>
-                  {z.name}
-                </option>
-              ))}
-            </select>
-
-            <label>Select Ward</label>
-            <select
-              className="input"
-              value={wardForBeat}
-              onChange={(e) => {
-                setWardForBeat(e.target.value);
-                setAreaForBeat("");
-              }}
-              required
-              disabled={!zoneForBeat || availableWardsForBeat.length === 0}
-            >
-              <option value="">Select ward</option>
-              {availableWardsForBeat.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-
-            <label>Select Area</label>
-            <select
-              className="input"
-              value={areaForBeat}
-              onChange={(e) => setAreaForBeat(e.target.value)}
-              required
-              disabled={!wardForBeat || availableAreasForBeat.length === 0}
-            >
-              <option value="">Select area</option>
-              {availableAreasForBeat.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} ({a.areaType || "—"})
-                </option>
-              ))}
-            </select>
-
-            <label>Beat Name</label>
-            <input
-              className="input"
-              value={beatName}
-              onChange={(e) => setBeatName(e.target.value)}
-              required
-              disabled={!areaForBeat}
-            />
-
-            {/* KML Upload Section */}
-            <div style={{
-              margin: "20px 0",
-              padding: "16px",
-              background: "rgba(139, 92, 246, 0.05)",
-              border: "1px dashed rgba(139, 92, 246, 0.3)",
-              borderRadius: "8px"
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                <MapPin size={18} color="#8b5cf6" />
-                <span style={{ fontWeight: 600, fontSize: "14px", color: "#8b5cf6" }}>
-                  Upload KML File (Optional)
-                </span>
-              </div>
-              <p className="muted" style={{ fontSize: "12px", marginBottom: "12px" }}>
-                Upload a KML file to define the beat geometry with coordinates
-              </p>
-              <button
-                type="button"
-                onClick={() => setShowKMLUploader(true)}
-                disabled={!areaForBeat}
-                style={{
-                  background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)",
-                  color: "white",
-                  border: "none",
-                  padding: "10px 16px",
-                  borderRadius: "6px",
-                  fontWeight: 600,
-                  fontSize: "13px",
-                  cursor: !areaForBeat ? "not-allowed" : "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  opacity: !areaForBeat ? 0.5 : 1
-                }}
-              >
-                <Upload size={16} />
-                {uploadedKMLData ? "Change KML File" : "Upload KML File"}
-              </button>
-
-              {uploadedKMLData && (
-                <div style={{
-                  marginTop: "12px",
-                  padding: "8px 12px",
-                  background: "rgba(34, 197, 94, 0.1)",
-                  borderRadius: "6px",
-                  fontSize: "12px",
-                  color: "#15803d",
-                  fontWeight: 500
-                }}>
-                  ✓ {uploadedKMLData.name} ({uploadedKMLData.coordinates.length} points)
-                </div>
-              )}
+    <div className="page" style={{ padding: "40px", backgroundColor: "#f8fafc", minHeight: "100vh" }}>
+      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
+        {/* Header */}
+        <div style={{ marginBottom: "32px", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+          <div>
+            <div className="breadcrumb" style={{ fontSize: "0.875rem", color: "#64748b", display: "flex", gap: "8px", marginBottom: "8px" }}>
+              <span>City Admin</span>
+              <span>/</span>
+              <span style={{ color: "#1e293b", fontWeight: 500 }}>Area & Beat Management</span>
             </div>
+            <h1 style={{ fontSize: "1.875rem", fontWeight: 800, color: "#0f172a", margin: 0 }}>
+              Area & Beat Management
+            </h1>
+            <p style={{ marginTop: "8px", color: "#64748b", fontSize: "1rem" }}>
+              Upload KML files and manage street-level beats across city zones.
+            </p>
+          </div>
 
-            {/* Map Viewer */}
-            {tempBeatOnMap && (
-              <div style={{ marginBottom: "16px" }}>
-                <label style={{ marginBottom: "8px", display: "block" }}>Beat Preview on Map</label>
-                <div style={{
-                  height: "300px",
-                  width: "100%",
-                  borderRadius: "8px",
-                  overflow: "hidden",
-                  border: "2px solid #8b5cf6"
-                }}>
-                  <MapContainer
-                    center={tempBeatOnMap.coordinates[0]}
-                    zoom={14}
-                    style={{ height: "100%", width: "100%" }}
-                  >
-                    <TileLayer
-                      attribution='&copy; CARTO'
-                      url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-                    />
-                    <Polyline
-                      positions={tempBeatOnMap.coordinates as any}
-                      pathOptions={{
-                        color: '#8b5cf6',
-                        weight: 16,
-                        opacity: 0.2,
-                      }}
-                    />
-                    <Polyline
-                      positions={tempBeatOnMap.coordinates as any}
-                      pathOptions={{
-                        color: '#8b5cf6',
-                        weight: 6,
-                        opacity: 1,
-                        lineCap: 'round'
-                      }}
-                    >
-                      <Popup>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: "12px" }}>{tempBeatOnMap.name}</div>
-                          <div style={{ fontSize: "10px", opacity: 0.8 }}>📤 Uploaded KML</div>
-                        </div>
-                      </Popup>
-                    </Polyline>
-                  </MapContainer>
-                </div>
+          <div style={{
+            backgroundColor: "white",
+            padding: "8px 16px",
+            borderRadius: "12px",
+            border: "1px solid #e2e8f0",
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+          }}>
+            <div style={{ backgroundColor: "#eff6ff", padding: "8px", borderRadius: "8px" }}>
+              <MapPin size={20} color="#2563eb" />
+            </div>
+            <div>
+              <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 500 }}>Total Beats</div>
+              <div style={{ fontSize: "1.125rem", fontWeight: 700, color: "#1e293b" }}>{beats.length}</div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "32px" }}>
+          {/* Top Section: Form */}
+          <section>
+            <BeatForm onSuccess={loadBeats} />
+          </section>
+
+          {/* Bottom Section: Table */}
+          <section>
+            <div style={{ marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+              <Info size={16} color="#64748b" />
+              <span style={{ fontSize: "0.875rem", fontWeight: 500, color: "#64748b" }}>
+                All parsed geometry data is stored in the PostGIS-enabled database.
+              </span>
+            </div>
+            {loading ? (
+              <div style={{ padding: "40px", textAlign: "center", backgroundColor: "white", borderRadius: "12px" }}>
+                <div className="animate-spin" style={{ width: "32px", height: "32px", border: "4px solid #f3f3f3", borderTop: "4px solid #2563eb", borderRadius: "50%", margin: "0 auto" }}></div>
+                <p style={{ marginTop: "16px", color: "#64748b" }}>Loading beats...</p>
               </div>
+            ) : (
+              <BeatTable
+                beats={beats}
+                onRefresh={loadBeats}
+                onView={setViewingBeat}
+                onEdit={setEditingBeat}
+                onViewData={setInspectingBeat}
+                onAssign={setAssigningBeat}
+              />
             )}
-
-            <button
-              className="btn btn-primary"
-              type="submit"
-              disabled={!zoneForBeat || !wardForBeat || !areaForBeat || !beatName || savingBeat}
-            >
-              {savingBeat ? "Saving..." : "Create Beat"}
-            </button>
-            {beatStatus && <div className="muted">{beatStatus}</div>}
-          </form>
+          </section>
         </div>
       </div>
 
-      <div className="card">
-        <h3>Hierarchy</h3>
-        {renderHierarchy()}
-      </div>
-
-      {/* KML Uploader Modal */}
-      {showKMLUploader && (
-        <KMLUploader
-          onKMLParsed={handleKMLParsed}
-          onClose={() => setShowKMLUploader(false)}
-          isDarkMode={false}
+      {/* Modals */}
+      {viewingBeat && (
+        <BeatMapView
+          beat={viewingBeat}
+          onClose={() => setViewingBeat(null)}
         />
       )}
 
-      {/* Beat Preview Panel at Bottom */}
-      {uploadedKMLData && (
-        <BeatPreviewPanel
-          kmlData={uploadedKMLData}
-          onSave={handleSaveBeatWithKML}
-          onCancel={handleCancelKML}
-          isDarkMode={false}
+      {editingBeat && (
+        <EditBeatModal
+          beat={editingBeat}
+          onClose={() => setEditingBeat(null)}
+          onSuccess={loadBeats}
         />
       )}
+
+      {inspectingBeat && (
+        <KMLDataViewer
+          beat={inspectingBeat}
+          onClose={() => setInspectingBeat(null)}
+        />
+      )}
+
+      {assigningBeat && (
+        <AssignBeatModal
+          beat={assigningBeat}
+          onClose={() => setAssigningBeat(null)}
+          onSuccess={loadBeats}
+        />
+      )}
+
+      <style jsx>{`
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
