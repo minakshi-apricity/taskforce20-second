@@ -50,8 +50,8 @@ export function moduleQcPath(key: CanonicalModuleKey) {
   if (key === "LITTERBINS" || key === "TASKFORCE") {
     return `/modules/${base}/qc`;
   }
-  // Sweeping has no dedicated UI yet, land on module list
-  if (key === "SWEEPING") return "/modules";
+  // QC see their beats in the sweeping module page
+  if (key === "SWEEPING") return "/modules/sweeping";
   // Others (like TOILET) use the main module page which handles roles with tabs
   return `/modules/${base}`;
 }
@@ -59,6 +59,7 @@ export function moduleQcPath(key: CanonicalModuleKey) {
 export function moduleAdminPath(key: CanonicalModuleKey) {
   const base = routeForModule(key);
   if (key === "TOILET") return `/modules/${base}`;
+  if (key === "SWEEPING") return "/modules/sweeping";
   return `/modules/${base}/admin`;
 }
 

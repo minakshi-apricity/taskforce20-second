@@ -98,6 +98,7 @@ export const GeoApi = {
 
 export const AreaBeatApi = {
   list: () => apiFetch<{ beats: any[] }>("/city/areas"),
+  listMyBeats: () => apiFetch<{ beats: any[] }>("/city/areas/my-beats"),
   create: (formData: FormData) =>
     apiFetch<{ id: string }>("/city/areas", {
       method: "POST",

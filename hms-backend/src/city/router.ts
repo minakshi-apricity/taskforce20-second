@@ -1117,6 +1117,11 @@ router.get("/areas/my-beats", async (req, res, next) => {
         assignedToId: userId,
         deletedAt: null
       },
+      include: {
+        assignedTo: {
+          select: { name: true, email: true }
+        }
+      },
       orderBy: { createdAt: "desc" }
     });
 
@@ -1132,6 +1137,8 @@ router.get("/areas/my-beats", async (req, res, next) => {
       zoneName: nodeMap[b.zoneId] || "Unknown",
       wardName: nodeMap[b.wardId] || "Unknown",
       areaName: nodeMap[b.areaId] || "Unknown",
+      assignedToName: b.assignedTo?.name || null,
+      assignedToEmail: b.assignedTo?.email || null
     }));
 
     res.json({ beats: result });
