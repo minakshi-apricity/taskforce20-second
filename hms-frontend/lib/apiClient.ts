@@ -70,8 +70,10 @@ export const CityApi = {
   list: () => apiFetch<{ cities: { id: string; name: string }[] }>("/hms/cities"),
   create: (body: { name: string; code: string; ulbCode: string }) =>
     apiFetch("/hms/cities", { method: "POST", body: JSON.stringify(body) }),
+  update: (cityId: string, body: { name?: string; code?: string; ulbCode?: string; enabled?: boolean; adminName?: string; adminEmail?: string }) =>
+    apiFetch(`/hms/cities/${cityId}`, { method: "PATCH", body: JSON.stringify(body) }),
   setEnabled: (cityId: string, enabled: boolean) =>
-    apiFetch(`/hms/cities/${cityId}`, { method: "PATCH", body: JSON.stringify({ enabled }) }),
+    CityApi.update(cityId, { enabled }),
   toggleModule: (cityId: string, moduleId: string, enabled: boolean) =>
     apiFetch(`/hms/cities/${cityId}/modules/${moduleId}`, {
       method: "PATCH",
@@ -113,10 +115,10 @@ export const AreaBeatApi = {
     }),
   remove: (id: string) => apiFetch<{ success: boolean }>(`/city/areas/${id}`, { method: "DELETE" }),
   listPotentialAssignees: (id: string) => apiFetch<any[]>(`/city/areas/${id}/potential-assignees`),
-  assign: (id: string, userId: string) =>
+  assign: (id: string, userId: string, segmentId?: string) =>
     apiFetch(`/city/areas/${id}/assign`, {
       method: "POST",
-      body: JSON.stringify({ userId })
+      body: JSON.stringify({ userId, segmentId })
     })
 };
 

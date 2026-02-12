@@ -107,6 +107,7 @@ model User {
   cities                          UserCity[]
   modules                         UserModuleRole[]
   assignedBeats                   CityAreaBeat[]          @relation("BeatAssignedTo")
+  assignedSegments                BeatSegment[]           @relation("SegmentAssignedTo")
 }
 
 model UserCity {
@@ -669,10 +670,26 @@ model CityAreaBeat {
   assignedToId String?   @db.Uuid
   city         City      @relation(fields: [cityId], references: [id], onDelete: Cascade)
   assignedTo   User?     @relation("BeatAssignedTo", fields: [assignedToId], references: [id])
+  segments     BeatSegment[]
 
   @@index([cityId])
   @@index([areaId])
   @@index([beatName])
   @@index([assignedToId])
   @@map("CityAreaBeat")
+}
+
+model BeatSegment {
+  id           String       @id @default(uuid()) @db.Uuid
+  beatId       String       @db.Uuid
+  geometry     Json
+  assignedToId String?      @db.Uuid
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  beat         CityAreaBeat @relation(fields: [beatId], references: [id], onDelete: Cascade)
+  assignedTo   User?        @relation("SegmentAssignedTo", fields: [assignedToId], references: [id])
+
+  @@index([beatId])
+  @@index([assignedToId])
 }

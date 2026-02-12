@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ApiError, CityApi } from "@lib/apiClient";
+import { Edit2, X, Loader2 } from "lucide-react";
 
 interface CityAdminInfo {
   name: string;
@@ -21,6 +22,7 @@ export default function HmsDashboardPage() {
   const [cities, setCities] = useState<CityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editingCity, setEditingCity] = useState<CityRow | null>(null);
 
   const [cityName, setCityName] = useState("");
   const [cityCode, setCityCode] = useState("");
@@ -76,6 +78,16 @@ export default function HmsDashboardPage() {
     }
   };
 
+  const handleUpdateCity = async (cityId: string, data: { name: string; code: string; ulbCode: string; adminName?: string; adminEmail?: string }) => {
+    try {
+      await CityApi.update(cityId, data);
+      await refresh();
+      setEditingCity(null);
+    } catch (err: any) {
+      alert(err instanceof ApiError ? err.message : "Failed to update city");
+    }
+  };
+
   const handleCreateAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdminStatus("Creating...");
@@ -128,6 +140,7 @@ export default function HmsDashboardPage() {
                     <th style={{ padding: '12px 24px', textAlign: 'left' }}>City Admin</th>
                     <th style={{ padding: '12px 24px', textAlign: 'left' }}>Email</th>
                     <th style={{ padding: '12px 24px', textAlign: 'left' }}>Status</th>
+                    <th style={{ padding: '12px 24px', textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody style={{ background: 'white' }}>
@@ -152,11 +165,39 @@ export default function HmsDashboardPage() {
                           <span style={{ fontSize: 12, fontWeight: 600, color: city.enabled ? '#0f172a' : '#94a3b8' }}>{city.enabled ? "Active" : "Inactive"}</span>
                         </label>
                       </td>
+                      <td style={{ padding: '16px 24px', textAlign: 'right' }}>
+                        <button
+                          onClick={() => setEditingCity(city)}
+                          style={{
+                            padding: '6px',
+                            borderRadius: '6px',
+                            border: '1px solid #e2e8f0',
+                            background: 'white',
+                            color: '#6366f1',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = '#f5f3ff';
+                            e.currentTarget.style.borderColor = '#ddd6fe';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'white';
+                            e.currentTarget.style.borderColor = '#e2e8f0';
+                          }}
+                          title="Edit City"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {cities.length === 0 && (
                     <tr>
-                      <td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>No cities found.</td>
+                      <td colSpan={7} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>No cities found.</td>
                     </tr>
                   )}
                 </tbody>
@@ -273,6 +314,144 @@ export default function HmsDashboardPage() {
           </div>
         </>
       )}
+      {editingCity && (
+        <EditCityModal
+          city={editingCity}
+          onClose={() => setEditingCity(null)}
+          onSave={handleUpdateCity}
+        />
+      )}
+    </div>
+  );
+}
+
+function EditCityModal({ city, onClose, onSave }: { city: CityRow; onClose: () => void; onSave: (id: string, data: any) => Promise<void> }) {
+  const [name, setName] = useState(city.name);
+  const [code, setCode] = useState(city.code);
+  const [ulbCode, setUlbCode] = useState(city.ulbCode || "");
+  const [adminName, setAdminName] = useState(city.cityAdmin?.name || "");
+  const [adminEmail, setAdminEmail] = useState(city.cityAdmin?.email || "");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await onSave(city.id, {
+        name,
+        code,
+        ulbCode,
+        adminName,
+        adminEmail
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+      backgroundColor: 'rgba(15, 23, 42, 0.4)', backdropFilter: 'blur(4px)',
+      display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000,
+      animation: 'fadeIn 0.2s ease-out'
+    }}>
+      <div className="card" style={{
+        width: '90%', maxWidth: '400px', padding: 0, overflow: 'hidden',
+        boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)'
+      }}>
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: '#0f172a' }}>Edit City Details</h3>
+          <button onClick={onClose} style={{ border: 'none', background: 'transparent', color: '#64748b', cursor: 'pointer', padding: 4, borderRadius: 6 }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f1f5f9'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+            <X size={20} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="form" style={{ padding: 24, gap: 20 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>City Name</label>
+            <input
+              className="input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Pune"
+              required
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>City Code</label>
+            <input
+              className="input"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="e.g. pune"
+              required
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>ULB Code</label>
+            <input
+              className="input"
+              value={ulbCode}
+              onChange={(e) => setUlbCode(e.target.value)}
+              placeholder="e.g. pn01"
+              required
+            />
+          </div>
+
+          <div style={{ borderTop: '1px solid #f1f5f9', margin: '8px 0', paddingTop: '16px' }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Admin Details</span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>Admin Name</label>
+            <input
+              className="input"
+              value={adminName}
+              onChange={(e) => setAdminName(e.target.value)}
+              placeholder="e.g. John Doe"
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>Admin Email</label>
+            <input
+              className="input"
+              type="email"
+              value={adminEmail}
+              onChange={(e) => setAdminEmail(e.target.value)}
+              placeholder="e.g. admin@city.local"
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn"
+              style={{ flex: 1, background: '#f8fafc', border: '1px solid #e2e8f0', color: '#64748b', fontWeight: 700 }}
+              disabled={loading}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              style={{ flex: 1, background: '#1e3a8a', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+              disabled={loading}
+            >
+              {loading ? <Loader2 size={16} className="animate-spin" /> : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+      <style jsx>{`
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        .animate-spin { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      `}</style>
     </div>
   );
 }

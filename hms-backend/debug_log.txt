@@ -618,3 +618,131 @@ Inconsistent column data: Error creating UUID, invalid character: expected an op
 [ERROR] 2026-02-12T04:47:40.165Z 403 Forbidden
 [ERROR] 2026-02-12T04:47:44.298Z 403 Forbidden
 [ERROR] 2026-02-12T04:47:44.304Z 403 Forbidden
+[ERROR] 2026-02-12T05:58:43.028Z 404 Zone not found
+[ERROR] 2026-02-12T05:58:43.045Z 404 Zone not found
+[ERROR] 2026-02-12T06:57:12.985Z 403 Write access not permitted for this role
+[ERROR] 2026-02-12T06:57:22.688Z 403 Write access not permitted for this role
+[ERROR] 2026-02-12T06:59:48.189Z 400 Invalid role
+[ERROR] 2026-02-12T06:59:56.523Z 400 Invalid role
+[ERROR] 2026-02-12T07:00:03.423Z 400 Invalid role
+[ERROR] 2026-02-12T07:00:40.195Z 400 Invalid role
+[ERROR] 2026-02-12T07:00:41.430Z 400 Invalid role
+[ERROR] 2026-02-12T07:00:41.613Z 400 Invalid role
+[ERROR] 2026-02-12T07:04:41.657Z 403 Write access not permitted for this role
+[ERROR] 2026-02-12T07:09:04.312Z 400 Active city context required
+[ERROR] 2026-02-12T07:09:04.314Z 400 Active city context required
+[ERROR] 2026-02-12T07:12:33.960Z 500 
+Invalid `prisma.user.create()` invocation in
+/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/src/hms/router.ts:210:36
+
+  207 const city = await prisma.city.findUnique({ where: { id: cityId } });
+  208 if (!city) throw new HttpError(404, "City not found");
+  209 const hashed = await hashPassword(password);
+→ 210 const user = await prisma.user.create(
+Unique constraint failed on the fields: (`email`)
+PrismaClientKnownRequestError: 
+Invalid `prisma.user.create()` invocation in
+/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/src/hms/router.ts:210:36
+
+  207 const city = await prisma.city.findUnique({ where: { id: cityId } });
+  208 if (!city) throw new HttpError(404, "City not found");
+  209 const hashed = await hashPassword(password);
+→ 210 const user = await prisma.user.create(
+Unique constraint failed on the fields: (`email`)
+    at _n.handleRequestError (/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/generated/prisma/runtime/library.js:121:7749)
+    at _n.handleAndLogRequestError (/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/generated/prisma/runtime/library.js:121:7057)
+    at _n.request (/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/generated/prisma/runtime/library.js:121:6741)
+    at async l (/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/generated/prisma/runtime/library.js:130:9355)
+    at async /Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/src/hms/router.ts:210:18
+[ERROR] 2026-02-12T07:15:25.102Z 400 No City Admin found for this city to update
+[ERROR] 2026-02-12T07:16:42.786Z 404 Zone not found
+[ERROR] 2026-02-12T07:16:42.804Z 404 Zone not found
+[ERROR] 2026-02-12T07:25:49.309Z 400 Invalid zones for this city
+[ERROR] 2026-02-12T07:25:58.111Z 400 Invalid zones for this city
+[ERROR] 2026-02-12T07:27:15.242Z 403 Write access not permitted for this role
+[ERROR] 2026-02-12T07:27:24.094Z 403 Write access not permitted for this role
+[ERROR] 2026-02-12T07:28:22.268Z 400 Invalid zones for this city
+[ERROR] 2026-02-12T07:28:54.086Z 400 Invalid zones for this city
+[ERROR] 2026-02-12T07:32:17.306Z 400 Invalid zones for this city
+[ERROR] 2026-02-12T07:32:47.217Z 400 Invalid zones for this city
+[ERROR] 2026-02-12T07:35:06.966Z 400 Invalid zones for this city
+[ERROR] 2026-02-12T07:42:04.810Z 400 Invalid zones for this city
+[ERROR] 2026-02-12T07:45:36.520Z 400 Invalid zones for this city
+[ERROR] 2026-02-12T07:45:54.890Z 400 Invalid zones for this city
+[ERROR] 2026-02-12T07:48:39.533Z 403 Write access not permitted for this role
+[ERROR] 2026-02-12T07:49:21.464Z 403 Write access not permitted for this role
+[ERROR] 2026-02-12T07:49:42.643Z 403 Write access not permitted for this role
+[ERROR] 2026-02-12T07:51:24.871Z 403 Write access not permitted for this role
+[ERROR] 2026-02-12T09:33:36.535Z 500 
+Invalid `prisma.cityAreaBeat.findMany()` invocation in
+/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/src/city/router.ts:1145:45
+
+  1142 const userId = req.auth!.sub;
+  1143 const cityId = req.auth!.cityId!;
+  1144 
+→ 1145 const beats = await prisma.cityAreaBeat.findMany(
+The table `public.CityAreaBeat` does not exist in the current database.
+PrismaClientKnownRequestError: 
+Invalid `prisma.cityAreaBeat.findMany()` invocation in
+/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/src/city/router.ts:1145:45
+
+  1142 const userId = req.auth!.sub;
+  1143 const cityId = req.auth!.cityId!;
+  1144 
+→ 1145 const beats = await prisma.cityAreaBeat.findMany(
+The table `public.CityAreaBeat` does not exist in the current database.
+    at _n.handleRequestError (/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/generated/prisma/runtime/library.js:121:7749)
+    at _n.handleAndLogRequestError (/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/generated/prisma/runtime/library.js:121:7057)
+    at _n.request (/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/generated/prisma/runtime/library.js:121:6741)
+    at async l (/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/generated/prisma/runtime/library.js:130:9355)
+    at async /Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/src/city/router.ts:1145:19
+[ERROR] 2026-02-12T09:33:36.542Z 500 
+Invalid `prisma.cityAreaBeat.findMany()` invocation in
+/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/src/city/router.ts:1145:45
+
+  1142 const userId = req.auth!.sub;
+  1143 const cityId = req.auth!.cityId!;
+  1144 
+→ 1145 const beats = await prisma.cityAreaBeat.findMany(
+The table `public.CityAreaBeat` does not exist in the current database.
+PrismaClientKnownRequestError: 
+Invalid `prisma.cityAreaBeat.findMany()` invocation in
+/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/src/city/router.ts:1145:45
+
+  1142 const userId = req.auth!.sub;
+  1143 const cityId = req.auth!.cityId!;
+  1144 
+→ 1145 const beats = await prisma.cityAreaBeat.findMany(
+The table `public.CityAreaBeat` does not exist in the current database.
+    at _n.handleRequestError (/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/generated/prisma/runtime/library.js:121:7749)
+    at _n.handleAndLogRequestError (/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/generated/prisma/runtime/library.js:121:7057)
+    at _n.request (/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/generated/prisma/runtime/library.js:121:6741)
+    at async l (/Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/generated/prisma/runtime/library.js:130:9355)
+    at async /Users/Developer/insstanto/taskforce20/taskforce20/hms-backend/src/city/router.ts:1145:19
+[ERROR] 2026-02-12T09:39:41.006Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:39:44.926Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:39:51.396Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:40:11.047Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:40:11.684Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:40:19.886Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:40:21.437Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:40:21.598Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:40:21.752Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:40:21.899Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:40:58.977Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:42:29.706Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:42:30.182Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:42:30.418Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:42:30.607Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:42:30.785Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:42:30.930Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:42:31.131Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:43:31.277Z 401 Invalid credentials
+[ERROR] 2026-02-12T09:43:49.614Z 400 Active city context required
+[ERROR] 2026-02-12T09:43:49.616Z 400 Active city context required
+[ERROR] 2026-02-12T09:47:57.372Z 400 Active city context required
+[ERROR] 2026-02-12T09:47:57.375Z 400 Active city context required
+[ERROR] 2026-02-12T09:48:03.001Z 400 Active city context required
+[ERROR] 2026-02-12T09:48:03.008Z 400 Active city context required
+[ERROR] 2026-02-12T10:15:45.668Z 403 Forbidden
+[ERROR] 2026-02-12T10:15:45.671Z 403 Forbidden

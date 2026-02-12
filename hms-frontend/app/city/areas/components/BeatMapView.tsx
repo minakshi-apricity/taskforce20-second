@@ -102,11 +102,30 @@ export default function BeatMapView({ beat, onClose }: BeatMapViewProps) {
     const [searchQuery, setSearchQuery] = useState("");
     const [showAssignModal, setShowAssignModal] = useState(false);
 
-    if (!beat.geometry) return null;
+    const explodedGeoJSON = React.useMemo(() => {
+        if (beat.segments && beat.segments.length > 0) {
+            return {
+                type: "FeatureCollection",
+                features: beat.segments.map((seg: any, i: number) => ({
+                    type: "Feature",
+                    geometry: seg.geometry,
+                    properties: {
+                        id: seg.id,
+                        index: i,
+                        isSegment: true,
+                        assignedToName: seg.assignedToName || beat.assignedToName,
+                        assignedToId: seg.assignedToId || beat.assignedToId,
+                        isUnassigned: !seg.assignedToId && !beat.assignedToId
+                    }
+                }))
+            };
+        }
+        return beat.geometry;
+    }, [beat.geometry, beat.segments, beat.assignedToName, beat.assignedToId]);
 
-    const features = beat.geometry?.features || [];
+    const features = explodedGeoJSON?.features || [];
     const filteredFeatures = features.filter((f: any) =>
-        (f.properties?.name || "").toLowerCase().includes(searchQuery.toLowerCase())
+        (f.properties?.name || f.properties?.index || "").toString().toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const handleZoomIn = () => window.dispatchEvent(new CustomEvent("map-zoom-in"));
@@ -305,21 +324,23 @@ export default function BeatMapView({ beat, onClose }: BeatMapViewProps) {
                             )}
 
                             <GeoJSON
-                                key={`${mapType}-${hoveredFeature}-${searchQuery}`}
-                                data={beat.geometry}
+                                key={`${mapType}-${hoveredFeature}-${searchQuery}-${JSON.stringify(explodedGeoJSON)}`}
+                                data={explodedGeoJSON as any}
                                 style={(feature: any) => {
-                                    const featureId = feature.properties?.name || "";
+                                    const props = feature?.properties;
+                                    const featureId = props?.name || props?.id || "";
                                     const color = getFeatureColor(feature);
                                     const isHovered = hoveredFeature === featureId;
-                                    const isSelected = selectedFeature?.properties?.name === featureId;
+                                    const isSelected = selectedFeature?.properties?.name === featureId || selectedFeature?.properties?.id === props?.id;
+                                    const isUnassigned = props?.isUnassigned;
 
                                     return {
-                                        color: color,
-                                        weight: (isHovered || isSelected) ? 5 : 3,
+                                        color: isUnassigned ? "#94a3b8" : color,
+                                        weight: (isHovered || isSelected) ? 6 : (isUnassigned ? 2 : 4),
                                         fillOpacity: (isHovered || isSelected) ? 0.45 : 0.25,
-                                        fillColor: color,
-                                        opacity: 1,
-                                        dashArray: isHovered ? "5, 5" : ""
+                                        fillColor: isUnassigned ? "#cbd5e1" : color,
+                                        opacity: isUnassigned ? 0.4 : 1,
+                                        dashArray: isUnassigned ? "5, 5" : (isHovered ? "5, 5" : "")
                                     };
                                 }}
                                 pointToLayer={(feature: any, latlng: any) => {
@@ -327,22 +348,10 @@ export default function BeatMapView({ beat, onClose }: BeatMapViewProps) {
                                     const color = getFeatureColor(feature);
                                     const icon = L.divIcon({
                                         html: `
-                         <div style="
-                            position: relative;
-                            width: 32px; height: 32px;
-                            background: white;
-                            border: 3px solid ${color};
-                            border-radius: 50% 50% 50% 0;
-                            transform: rotate(-45deg);
-                            box-shadow: 0 4px 6px rgba(0,0,0,0.2)
-                         ">
-                            <div style="
-                               position: absolute; width: 10px; height: 10px;
-                               background: ${color}; border-radius: 50%;
-                               top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(45deg);
-                            "></div>
-                         </div>
-                      `,
+                                            <div style="position: relative; width: 32px; height: 32px; background: white; border: 3px solid ${color}; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); box-shadow: 0 4px 6px rgba(0,0,0,0.2)">
+                                                <div style="position: absolute; width: 10px; height: 10px; background: ${color}; border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(45deg);"></div>
+                                            </div>
+                                        `,
                                         className: "",
                                         iconSize: [32, 32],
                                         iconAnchor: [16, 32]
@@ -350,8 +359,11 @@ export default function BeatMapView({ beat, onClose }: BeatMapViewProps) {
                                     return L.marker(latlng, { icon });
                                 }}
                                 onEachFeature={(feature, layer) => {
-                                    const name = feature.properties?.name || "Unnamed";
+                                    const props = feature?.properties;
+                                    const name = props?.name || (props?.isSegment ? `Segment ${props.index + 1}` : "Unnamed");
                                     const color = getFeatureColor(feature);
+                                    const assignedToName = props?.assignedToName || 'Unassigned';
+                                    const isUnassigned = props?.isUnassigned;
 
                                     if (layer && typeof layer.on === "function") {
                                         layer.on({
@@ -363,16 +375,31 @@ export default function BeatMapView({ beat, onClose }: BeatMapViewProps) {
 
                                     if (layer && typeof layer.bindPopup === "function") {
                                         layer.bindPopup(`
-                    <div style="font-family: 'Inter', sans-serif; padding: 10px; min-width: 220px;">
-                      <div style="color: ${color}; font-weight: 800; font-size: 16px; margin-bottom: 6px;">${name}</div>
-                      <div style="height: 1px; background: #f1f5f9; margin: 8px 0;"></div>
-                      <div style="display: grid; gap: 4px; font-size: 13px; color: #475569;">
-                        <div><strong>Geometry:</strong> ${feature.geometry.type}</div>
-                        <div><strong>Beat:</strong> ${beat.beatName}</div>
-                      </div>
-                      <div style="margin-top: 12px; font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase;">GIS Metadata Connected</div>
-                    </div>
-                  `, { className: 'modern-popup' });
+                                            <div style="font-family: 'Inter', sans-serif; padding: 16px; min-width: 240px;">
+                                                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                                                    <div style="width: 12px; height: 12px; border-radius: 50%; background: ${isUnassigned ? '#ef4444' : '#10b981'}; box-shadow: 0 0 12px ${isUnassigned ? '#fee2e2' : '#dcfce7'}"></div>
+                                                    <div style="font-weight: 900; color: #1e293b; font-size: 18px; letter-spacing: -0.02em;">${name}</div>
+                                                </div>
+                                                <div style="font-size: 13px; color: #64748b; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; gap: 6px;">
+                                                    ${beat.zoneName} <span style="color: #cbd5e1">•</span> ${beat.wardName}
+                                                    ${props?.isSegment ? `<span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:10px;">Route Segment</span>` : ''}
+                                                </div>
+                                                <div style="background: #fcfdfe; padding: 14px; border-radius: 16px; border: 1px solid #f1f5f9; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02)">
+                                                    <div style="font-size: 10px; color: #94a3b8; text-transform: uppercase; font-weight: 800; margin-bottom: 8px; letter-spacing: 0.05em;">Assigned To</div>
+                                                    <div style="font-weight: 700; color: #334155; font-size: 15px; display: flex; align-items: center; gap: 10px;">
+                                                        <div style="width: 28px; height: 28px; border-radius: 50%; background: ${isUnassigned ? '#94a3b8' : '#2563eb'}; color: white; display: flex; align-items: center; justifyContent: center; font-size: 11px; font-weight: 800;">
+                                                            ${(assignedToName || 'U')[0]}
+                                                        </div>
+                                                        <div>
+                                                            <div style="line-height: 1.2;">${assignedToName}</div>
+                                                            <div style="font-size: 10px; color: ${isUnassigned ? '#ef4444' : '#10b981'}; margin-top: 2px;">
+                                                                ${isUnassigned ? "Not Assigned" : "Active Member"}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        `, { className: 'modern-popup' });
                                     }
                                 }}
                             />

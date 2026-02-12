@@ -68,6 +68,7 @@ router.get("/cities", async (_req, res, next) => {
         enabled: c.enabled,
         cityAdmin: c.users.find((u) => u.role === Role.CITY_ADMIN)
           ? {
+            id: c.users.find((u) => u.role === Role.CITY_ADMIN)?.userId || "",
             name: c.users.find((u) => u.role === Role.CITY_ADMIN)?.user.name || "",
             email: c.users.find((u) => u.role === Role.CITY_ADMIN)?.user.email || ""
           }
@@ -116,11 +117,58 @@ router.post("/cities", validateBody(citySchema), async (req, res, next) => {
 router.patch("/cities/:cityId", async (req, res, next) => {
   try {
     const cityId = req.params.cityId;
-    const enabled = req.body?.enabled;
-    if (typeof enabled !== "boolean") throw new HttpError(400, "enabled boolean required");
+    const { name, code, ulbCode, enabled, adminName, adminEmail } = req.body;
+
+    if (name === undefined && code === undefined && ulbCode === undefined && enabled === undefined && adminName === undefined && adminEmail === undefined) {
+      throw new HttpError(400, "No fields to update provided");
+    }
+
+    if (code || ulbCode) {
+      const existing = await prisma.city.findFirst({
+        where: {
+          OR: [
+            ...(code ? [{ code }] : []),
+            ...(ulbCode ? [{ ulbCode }] : [])
+          ],
+          NOT: { id: cityId }
+        }
+      });
+      if (existing) throw new HttpError(400, "City code or ULB code already exists");
+    }
+
+    // Update City Admin if requested
+    if (adminName !== undefined || adminEmail !== undefined) {
+      const cityAdminLink = await prisma.userCity.findFirst({
+        where: { cityId, role: Role.CITY_ADMIN },
+        include: { user: true }
+      });
+
+      if (!cityAdminLink) {
+        throw new HttpError(400, "No City Admin found for this city to update");
+      }
+
+      if (adminEmail && adminEmail !== cityAdminLink.user.email) {
+        const emailExists = await prisma.user.findUnique({ where: { email: adminEmail } });
+        if (emailExists) throw new HttpError(400, "Email already in use by another user");
+      }
+
+      await prisma.user.update({
+        where: { id: cityAdminLink.userId },
+        data: {
+          ...(adminName ? { name: adminName } : {}),
+          ...(adminEmail ? { email: adminEmail } : {})
+        }
+      });
+    }
+
     const city = await prisma.city.update({
       where: { id: cityId },
-      data: { enabled }
+      data: {
+        ...(name !== undefined ? { name } : {}),
+        ...(code !== undefined ? { code } : {}),
+        ...(ulbCode !== undefined ? { ulbCode } : {}),
+        ...(typeof enabled === "boolean" ? { enabled } : {})
+      }
     });
     res.json({ city });
   } catch (err) {

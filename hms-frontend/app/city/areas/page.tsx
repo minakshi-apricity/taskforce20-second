@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import BeatForm from "./components/BeatForm";
+import AreaForm from "./components/AreaForm";
 import BeatTable from "./components/BeatTable";
 import EditBeatModal from "./components/EditBeatModal";
 import KMLDataViewer from "./components/KMLDataViewer";
@@ -19,6 +20,7 @@ export default function AreasPage() {
   const [editingBeat, setEditingBeat] = useState<any | null>(null);
   const [inspectingBeat, setInspectingBeat] = useState<any | null>(null);
   const [assigningBeat, setAssigningBeat] = useState<any | null>(null);
+  const [geoVersion, setGeoVersion] = useState(0);
 
   const loadBeats = useCallback(async () => {
     try {
@@ -76,9 +78,10 @@ export default function AreasPage() {
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "32px" }}>
-          {/* Top Section: Form */}
-          <section>
-            <BeatForm onSuccess={loadBeats} />
+          {/* Top Section: Forms */}
+          <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "32px", alignItems: "start" }}>
+            <AreaForm onSuccess={() => setGeoVersion(v => v + 1)} />
+            <BeatForm onSuccess={loadBeats} geoVersion={geoVersion} />
           </section>
 
           {/* Bottom Section: Table */}

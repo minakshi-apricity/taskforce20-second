@@ -6,12 +6,19 @@ import { Upload, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
 interface BeatFormProps {
     onSuccess: () => void;
+    geoVersion?: number;
 }
 
-export default function BeatForm({ onSuccess }: BeatFormProps) {
+export default function BeatForm({ onSuccess, geoVersion }: BeatFormProps) {
     const [zones, setZones] = useState<any[]>([]);
     const [wards, setWards] = useState<any[]>([]);
     const [areas, setAreas] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (selectedWard && geoVersion) {
+            loadAreas(selectedWard);
+        }
+    }, [geoVersion]);
 
     const [selectedZone, setSelectedZone] = useState("");
     const [selectedWard, setSelectedWard] = useState("");

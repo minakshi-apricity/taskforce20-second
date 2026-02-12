@@ -146,13 +146,27 @@ export default function CityUsersPage() {
   const toggleNewZone = (id: string) => {
     setNewZoneIds((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      const isRemoving = next.has(id);
+      if (isRemoving) {
+        next.delete(id);
+        setNewWardIds((prevWards) => {
+          const nextWards = new Set(prevWards);
+          wards.filter((w) => w.parentId === id).forEach((w) => nextWards.delete(w.id));
+          return nextWards;
+        });
+      } else {
+        next.add(id);
+      }
       setNewUserModules((mods) =>
         role === "QC"
           ? Object.fromEntries(
             Object.entries(mods).map(([mid, val]) => [
               mid,
-              { ...val, zoneIds: Array.from(next), wardIds: val.wardIds }
+              {
+                ...val,
+                zoneIds: Array.from(next),
+                wardIds: isRemoving && val.wardIds ? val.wardIds.filter((wid) => wards.find((w) => w.id === wid)?.parentId !== id) : val.wardIds
+              }
             ])
           )
           : mods
@@ -259,17 +273,30 @@ export default function CityUsersPage() {
       const current = prev[userId];
       if (!current) return prev;
       const nextZones = new Set(current.zoneIds);
-      nextZones.has(zoneId) ? nextZones.delete(zoneId) : nextZones.add(zoneId);
+      let nextWards = current.wardIds;
+      const isRemoving = nextZones.has(zoneId);
+
+      if (isRemoving) {
+        nextZones.delete(zoneId);
+        nextWards = new Set(Array.from(current.wardIds).filter((wid) => wards.find((w) => w.id === wid)?.parentId !== zoneId));
+      } else {
+        nextZones.add(zoneId);
+      }
+
       const modules =
         current.role === "QC"
           ? Object.fromEntries(
             Object.entries(current.modules).map(([mid, val]) => [
               mid,
-              { ...val, zoneIds: Array.from(nextZones), wardIds: val.wardIds }
+              {
+                ...val,
+                zoneIds: Array.from(nextZones),
+                wardIds: isRemoving && val.wardIds ? val.wardIds.filter((wid) => wards.find((w) => w.id === wid)?.parentId !== zoneId) : val.wardIds
+              }
             ])
           )
           : current.modules;
-      return { ...prev, [userId]: { ...current, zoneIds: nextZones, modules } };
+      return { ...prev, [userId]: { ...current, zoneIds: nextZones, wardIds: nextWards, modules } };
     });
   };
 
@@ -298,7 +325,13 @@ export default function CityUsersPage() {
     setSavingUserId(id);
     setError("");
     try {
-      if (payload.role === "QC" && (payload.zoneIds.size === 0 || payload.wardIds.size === 0)) {
+      const validZoneIds = new Set(zones.map((z) => z.id));
+      const validWardIds = new Set(wards.map((w) => w.id));
+
+      const cleanZoneIds = Array.from(payload.zoneIds).filter((id) => validZoneIds.has(id));
+      const cleanWardIds = Array.from(payload.wardIds).filter((id) => validWardIds.has(id));
+
+      if (payload.role === "QC" && (cleanZoneIds.length === 0 || cleanWardIds.length === 0)) {
         setError("QC users require at least one zone and ward");
         setSavingUserId(null);
         return;
@@ -308,16 +341,16 @@ export default function CityUsersPage() {
         canWrite,
         ...(payload.role === "QC"
           ? {
-            zoneIds: zoneIds && zoneIds.length ? zoneIds : Array.from(payload.zoneIds),
-            wardIds: wardIds && wardIds.length ? wardIds : Array.from(payload.wardIds)
+            zoneIds: zoneIds && zoneIds.length ? zoneIds.filter((id) => validZoneIds.has(id)) : cleanZoneIds,
+            wardIds: wardIds && wardIds.length ? wardIds.filter((id) => validWardIds.has(id)) : cleanWardIds
           }
           : {})
       }));
       await CityUserApi.update(id, {
         name: payload.name,
         role: payload.role,
-        zoneIds: Array.from(payload.zoneIds),
-        wardIds: Array.from(payload.wardIds),
+        zoneIds: cleanZoneIds,
+        wardIds: cleanWardIds,
         modules
       });
       await loadUsers();

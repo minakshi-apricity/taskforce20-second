@@ -139,7 +139,91 @@ async function main() {
     }
   }
 
+  // 7. Create Geo Structure (Zone -> Ward -> Area)
+  const zone = await prisma.geoNode.create({
+    data: {
+      cityId: city.id,
+      level: "ZONE",
+      name: "Zone 1",
+      path: ""
+    }
+  });
+  await prisma.geoNode.update({ where: { id: zone.id }, data: { path: `/city/${city.id}/zone/${zone.id}` } });
+
+  const ward = await prisma.geoNode.create({
+    data: {
+      cityId: city.id,
+      level: "WARD",
+      name: "Ward 1",
+      parentId: zone.id,
+      path: ""
+    }
+  });
+  await prisma.geoNode.update({ where: { id: ward.id }, data: { path: `/city/${city.id}/zone/${zone.id}/ward/${ward.id}` } });
+
+  const area = await prisma.geoNode.create({
+    data: {
+      cityId: city.id,
+      level: "AREA",
+      name: "Area 1",
+      parentId: ward.id,
+      areaType: "RESIDENTIAL",
+      path: ""
+    }
+  });
+  await prisma.geoNode.update({ where: { id: area.id }, data: { path: `/city/${city.id}/zone/${zone.id}/ward/${ward.id}/area/${area.id}` } });
+
+  // 8. Create QC User
+  const qcEmail = "qc@indore.local";
+  const qcUser = await prisma.user.upsert({
+    where: { email: qcEmail },
+    update: { password: hashedPwd, name: "Indore QC" },
+    create: { email: qcEmail, password: hashedPwd, name: "Indore QC" }
+  });
+
+  await prisma.userCity.upsert({
+    where: { userId_cityId_role: { userId: qcUser.id, cityId: city.id, role: Role.QC } },
+    update: { zoneIds: [zone.id], wardIds: [ward.id] },
+    create: {
+      userId: qcUser.id,
+      cityId: city.id,
+      role: Role.QC,
+      zoneIds: [zone.id],
+      wardIds: [ward.id]
+    }
+  });
+
+  // Assign QC role to modules
+  for (const m of allModules) {
+    if (m.name === "SWEEPING" || m.name === "TOILET" || m.name === "LITTERBINS" || m.name === "TASKFORCE") {
+      await prisma.userModuleRole.upsert({
+        where: { userId_cityId_moduleId_role: { userId: qcUser.id, cityId: city.id, moduleId: m.id, role: Role.QC } },
+        update: { zoneIds: [zone.id], wardIds: [ward.id] },
+        create: {
+          userId: qcUser.id,
+          cityId: city.id,
+          moduleId: m.id,
+          role: Role.QC,
+          canWrite: true,
+          zoneIds: [zone.id],
+          wardIds: [ward.id]
+        }
+      });
+    }
+  }
+
+  // Update Employee to have zone/ward scope too
+  await prisma.userCity.update({
+    where: { userId_cityId_role: { userId: empUser.id, cityId: city.id, role: Role.EMPLOYEE } },
+    data: { zoneIds: [zone.id], wardIds: [ward.id] }
+  });
+  const empRoles = await prisma.userModuleRole.findMany({ where: { userId: empUser.id } });
+  for (const r of empRoles) {
+    await prisma.userModuleRole.update({ where: { id: r.id }, data: { zoneIds: [zone.id], wardIds: [ward.id] } });
+  }
+
   console.log("✅ Seed Complete!");
+  console.log(`- QC User:         ${qcEmail} / ${hmsPassword}`);
   console.log(`- HMS Super Admin: ${hmsEmail} / ${hmsPassword}`);
   console.log(`- City Admin:      ${cityAdminEmail} / ${hmsPassword}`);
   console.log(`- Employee:        ${empEmail} / ${hmsPassword}`);

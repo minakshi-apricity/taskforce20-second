@@ -81,14 +81,35 @@ export default function GlobalBeatMapView({ beats }: { beats: any[] }) {
                     const isUnassigned = !beat.assignedToId;
 
                     // Transform geometry to FeatureCollection of segments for individual coloring
+                    // Transform geometry or segments to FeatureCollection
                     const explodedGeoJSON = useMemo(() => {
+                        // Priority 1: Use backend-provided segments (granular assignment support)
+                        if (beat.segments && beat.segments.length > 0) {
+                            return {
+                                type: "FeatureCollection",
+                                features: beat.segments.map((seg: any, i: number) => ({
+                                    type: "Feature",
+                                    geometry: seg.geometry,
+                                    properties: {
+                                        id: seg.id,
+                                        index: i,
+                                        isSegment: true,
+                                        assignedToName: seg.assignedToName || beat.assignedToName, // Fallback to beat assignment if segment unassigned?
+                                        assignedToId: seg.assignedToId || beat.assignedToId,
+                                        isUnassigned: !seg.assignedToId && !beat.assignedToId
+                                    }
+                                }))
+                            };
+                        }
+
+                        // Priority 2: Fallback to beat.geometry (legacy or simple beats)
                         if (!beat.geometry) return null;
                         try {
                             const geom = beat.geometry;
                             if (geom.type === "LineString") {
                                 return {
                                     type: "FeatureCollection",
-                                    features: [{ type: "Feature", geometry: geom, properties: { index: 0 } }]
+                                    features: [{ type: "Feature", geometry: geom, properties: { index: 0, assignedToName: beat.assignedToName, isUnassigned: !beat.assignedToId } }]
                                 };
                             } else if (geom.type === "MultiLineString") {
                                 return {
@@ -96,27 +117,27 @@ export default function GlobalBeatMapView({ beats }: { beats: any[] }) {
                                     features: geom.coordinates.map((coords: any, i: number) => ({
                                         type: "Feature",
                                         geometry: { type: "LineString", coordinates: coords },
-                                        properties: { index: i }
+                                        properties: { index: i, assignedToName: beat.assignedToName, isUnassigned: !beat.assignedToId }
                                     }))
                                 };
                             } else if (geom.type === "GeometryCollection") {
                                 const features: any[] = [];
                                 geom.geometries.forEach((g: any) => {
                                     if (g.type === "LineString") {
-                                        features.push({ type: "Feature", geometry: g, properties: { index: features.length } });
+                                        features.push({ type: "Feature", geometry: g, properties: { index: features.length, assignedToName: beat.assignedToName, isUnassigned: !beat.assignedToId } });
                                     } else if (g.type === "MultiLineString") {
                                         g.coordinates.forEach((coords: any) => {
-                                            features.push({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: { index: features.length } });
+                                            features.push({ type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: { index: features.length, assignedToName: beat.assignedToName, isUnassigned: !beat.assignedToId } });
                                         });
                                     }
                                 });
                                 return { type: "FeatureCollection", features };
                             }
-                            return { type: "FeatureCollection", features: [{ type: "Feature", geometry: geom, properties: { index: 0 } }] };
+                            return { type: "FeatureCollection", features: [{ type: "Feature", geometry: geom, properties: { index: 0, assignedToName: beat.assignedToName, isUnassigned: !beat.assignedToId } }] };
                         } catch (e) {
                             return null;
                         }
-                    }, [beat.geometry]);
+                    }, [beat.geometry, beat.segments, beat.assignedToName, beat.assignedToId]);
 
                     if (!explodedGeoJSON) return null;
 
@@ -125,7 +146,9 @@ export default function GlobalBeatMapView({ beats }: { beats: any[] }) {
                             key={beat.id}
                             data={explodedGeoJSON as any}
                             style={(feature) => {
-                                const segmentIdx = feature?.properties?.index || 0;
+                                const props = feature?.properties;
+                                const segmentIdx = props?.index || 0;
+                                const isUnassigned = props?.isUnassigned;
                                 const segmentColor = isUnassigned ? "#94a3b8" : COLORS[(bIdx + segmentIdx) % COLORS.length];
 
                                 return {
@@ -136,7 +159,11 @@ export default function GlobalBeatMapView({ beats }: { beats: any[] }) {
                                     dashArray: isUnassigned ? "5, 8" : "none"
                                 };
                             }}
-                            onEachFeature={(_, layer) => {
+                            onEachFeature={(feature, layer) => {
+                                const props = feature?.properties;
+                                const assignedToName = props?.assignedToName || 'Unassigned';
+                                const isUnassigned = props?.isUnassigned;
+
                                 layer.on('click', () => setSelectedBeatId(beat.id));
                                 layer.bindPopup(`
                                     <div style="font-family: 'Inter', sans-serif; padding: 16px; min-width: 240px;">
@@ -146,15 +173,16 @@ export default function GlobalBeatMapView({ beats }: { beats: any[] }) {
                                         </div>
                                         <div style="font-size: 13px; color: #64748b; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; gap: 6px;">
                                             ${beat.zoneName} <span style="color: #cbd5e1">•</span> ${beat.wardName}
+                                            ${props?.isSegment ? `<span style="background:#e0f2fe; color:#0369a1; padding:2px 6px; border-radius:4px; font-size:10px;">Segment ${props.index + 1}</span>` : ''}
                                         </div>
                                         <div style="background: #fcfdfe; padding: 14px; border-radius: 16px; border: 1px solid #f1f5f9; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02)">
                                             <div style="font-size: 10px; color: #94a3b8; text-transform: uppercase; font-weight: 800; margin-bottom: 8px; letter-spacing: 0.05em;">Duty Officer</div>
                                             <div style="font-weight: 700; color: #334155; font-size: 15px; display: flex; align-items: center; gap: 10px;">
                                                 <div style="width: 28px; height: 28px; border-radius: 50%; background: #2563eb; color: white; display: flex; align-items: center; justifyContent: center; font-size: 11px; font-weight: 800;">
-                                                    ${(beat.assignedToName || 'X')[0]}
+                                                    ${(assignedToName || 'X')[0]}
                                                 </div>
                                                 <div>
-                                                    <div style="line-height: 1.2;">${beat.assignedToName || 'Unassigned'}</div>
+                                                    <div style="line-height: 1.2;">${assignedToName}</div>
                                                     <div style="font-size: 10px; color: ${isUnassigned ? '#ef4444' : '#10b981'}; margin-top: 2px;">
                                                         ${isUnassigned ? "Awaiting Deployment" : "Active on Route"}
                                                     </div>

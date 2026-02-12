@@ -125,7 +125,7 @@ router.get("/info", async (req, res, next) => {
 // Apply city-level access guard to remaining routes
 router.use(requireCityAccess());
 
-router.post("/geo", validateBody(geoSchema), async (req, res, next) => {
+router.post("/geo", requireRoles([Role.CITY_ADMIN]), validateBody(geoSchema), async (req, res, next) => {
   try {
     const cityId = req.auth!.cityId!;
     const { name, parentId, level, areaType } = req.body as z.infer<typeof geoSchema>;
@@ -187,7 +187,7 @@ async function validateCityModules(cityId: string, modules: z.infer<typeof modul
   return cityModules;
 }
 
-router.patch("/geo/:id", validateBody(geoUpdateSchema), async (req, res, next) => {
+router.patch("/geo/:id", requireRoles([Role.CITY_ADMIN]), validateBody(geoUpdateSchema), async (req, res, next) => {
   try {
     const cityId = req.auth!.cityId!;
     const { name, areaType } = req.body as z.infer<typeof geoUpdateSchema>;
@@ -213,7 +213,7 @@ router.patch("/geo/:id", validateBody(geoUpdateSchema), async (req, res, next) =
   }
 });
 
-router.delete("/geo/:id", async (req, res, next) => {
+router.delete("/geo/:id", requireRoles([Role.CITY_ADMIN]), async (req, res, next) => {
   try {
     const cityId = req.auth!.cityId!;
     const node = await prisma.geoNode.findUnique({ where: { id: req.params.id as string } });
@@ -278,7 +278,7 @@ const userSchema = z.object({
   wardIds: z.array(z.string().uuid()).optional()
 });
 
-router.post("/users", validateBody(userSchema), async (req, res, next) => {
+router.post("/users", requireRoles([Role.CITY_ADMIN]), validateBody(userSchema), async (req, res, next) => {
   try {
     const cityId = req.auth!.cityId!;
     const { email, name, password, role, modules, zoneIds, wardIds } = req.body as z.infer<typeof userSchema>;
@@ -523,7 +523,7 @@ const userUpdateSchema = z.object({
   wardIds: z.array(z.string().uuid()).optional()
 });
 
-router.patch("/users/:userId", validateBody(userUpdateSchema), async (req, res, next) => {
+router.patch("/users/:userId", requireRoles([Role.CITY_ADMIN]), validateBody(userUpdateSchema), async (req, res, next) => {
   try {
     const cityId = req.auth!.cityId!;
     const { name, role, modules, zoneIds, wardIds } = req.body as z.infer<typeof userUpdateSchema>;
@@ -669,7 +669,7 @@ router.patch("/users/:userId", validateBody(userUpdateSchema), async (req, res, 
   }
 });
 
-router.delete("/users/:userId", async (req, res, next) => {
+router.delete("/users/:userId", requireRoles([Role.CITY_ADMIN]), async (req, res, next) => {
   try {
     const cityId = req.auth!.cityId!;
     const userId = req.params.userId as string;
@@ -833,7 +833,7 @@ router.post("/registration-requests/:id/reject", async (req, res, next) => {
   }
 });
 
-router.post("/areas", upload.single("kmlFile"), async (req, res, next) => {
+router.post("/areas", requireRoles([Role.CITY_ADMIN]), upload.single("kmlFile"), async (req, res, next) => {
   try {
     const cityId = req.auth!.cityId!;
     const { zoneId, wardId, areaId, beatName } = req.body;
@@ -879,6 +879,18 @@ router.post("/areas", upload.single("kmlFile"), async (req, res, next) => {
       }
     });
 
+    if (geometry) {
+      const segments = extractSegments(geometry);
+      if (segments.length > 0) {
+        await prisma.beatSegment.createMany({
+          data: segments.map((geom) => ({
+            beatId: created.id,
+            geometry: geom
+          }))
+        });
+      }
+    }
+
     res.json(created);
   } catch (err) {
     if (req.file) fs.unlinkSync(req.file.path);
@@ -886,17 +898,42 @@ router.post("/areas", upload.single("kmlFile"), async (req, res, next) => {
   }
 });
 
+function extractSegments(geometry: any): any[] {
+  const segments: any[] = [];
+  if (geometry.type === "LineString") {
+    segments.push(geometry);
+  } else if (geometry.type === "MultiLineString") {
+    geometry.coordinates.forEach((coords: any) => {
+      segments.push({ type: "LineString", coordinates: coords });
+    });
+  } else if (geometry.type === "GeometryCollection") {
+    geometry.geometries.forEach((g: any) => {
+      if (g.type === "LineString") {
+        segments.push(g);
+      } else if (g.type === "MultiLineString") {
+        g.coordinates.forEach((coords: any) => {
+          segments.push({ type: "LineString", coordinates: coords });
+        });
+      }
+    });
+  }
+  return segments;
+}
+
 router.get("/areas", async (req, res, next) => {
   try {
     const cityId = req.auth!.cityId!;
     const beats = await prisma.cityAreaBeat.findMany({
       where: { cityId, deletedAt: null },
+      orderBy: { createdAt: "desc" },
       include: {
-        assignedTo: {
-          select: { name: true, email: true }
+        assignedTo: { select: { name: true, email: true } },
+        segments: {
+          include: {
+            assignedTo: { select: { name: true, email: true } }
+          }
         }
-      },
-      orderBy: { createdAt: "desc" }
+      }
     });
 
     const nodeIds = Array.from(new Set(beats.flatMap(b => [b.zoneId, b.wardId, b.areaId])));
@@ -912,7 +949,15 @@ router.get("/areas", async (req, res, next) => {
       wardName: nodeMap[b.wardId] || "Unknown",
       areaName: nodeMap[b.areaId] || "Unknown",
       assignedToName: b.assignedTo?.name || null,
-      assignedToEmail: b.assignedTo?.email || null
+      assignedToEmail: b.assignedTo?.email || null,
+      segments: b.segments.map((s: any) => ({
+        id: s.id,
+        itemType: "segment",
+        geometry: s.geometry,
+        assignedToId: s.assignedToId,
+        assignedToName: s.assignedTo?.name || null,
+        assignedToEmail: s.assignedTo?.email || null
+      }))
     }));
 
     res.json({ beats: result });
@@ -921,7 +966,7 @@ router.get("/areas", async (req, res, next) => {
   }
 });
 
-router.put("/areas/:id", upload.single("kmlFile"), async (req, res, next) => {
+router.put("/areas/:id", requireRoles([Role.CITY_ADMIN]), upload.single("kmlFile"), async (req, res, next) => {
   try {
     const cityId = req.auth!.cityId!;
     const { id } = req.params;
@@ -960,6 +1005,22 @@ router.put("/areas/:id", upload.single("kmlFile"), async (req, res, next) => {
       data
     });
 
+    // If geometry was updated, regenerate segments
+    if (data.geometry) {
+      // Delete old segments
+      await prisma.beatSegment.deleteMany({ where: { beatId: id } });
+
+      const segments = extractSegments(data.geometry);
+      if (segments.length > 0) {
+        await prisma.beatSegment.createMany({
+          data: segments.map((geom) => ({
+            beatId: id,
+            geometry: geom
+          }))
+        });
+      }
+    }
+
     res.json(updated);
   } catch (err) {
     if (req.file) fs.unlinkSync(req.file.path);
@@ -967,7 +1028,7 @@ router.put("/areas/:id", upload.single("kmlFile"), async (req, res, next) => {
   }
 });
 
-router.delete("/areas/:id", async (req, res, next) => {
+router.delete("/areas/:id", requireRoles([Role.CITY_ADMIN]), async (req, res, next) => {
   try {
     const cityId = req.auth!.cityId!;
     const { id } = req.params;
@@ -1107,13 +1168,14 @@ router.post("/areas/:id/assign", async (req, res, next) => {
   try {
     const cityId = req.auth!.cityId!;
     const { id } = req.params;
-    const { userId } = req.body; // Can be null to unassign
+    // If segmentId is provided, assign to segment. Otherwise assign to whole beat (legacy or override)
+    // Actually, per requirements, we assign LineStrings (segments).
+    // Let's support an optional 'segmentId' in body.
+    const { userId, segmentId } = req.body;
 
-    const beat = await prisma.cityAreaBeat.findUnique({ where: { id } });
-    if (!beat || beat.cityId !== cityId) throw new HttpError(404, "Beat not found");
-
-    // Optional: Verify user exists and has correct role in this city
+    // Validation (reuse existing)
     if (userId) {
+      // ... existing validation ...
       const currentUserRoles = req.auth!.roles || [];
       const isCityAdmin = currentUserRoles.includes(Role.CITY_ADMIN) || currentUserRoles.includes(Role.HMS_SUPER_ADMIN);
       const targetRole = isCityAdmin ? Role.QC : Role.EMPLOYEE;
@@ -1126,12 +1188,24 @@ router.post("/areas/:id/assign", async (req, res, next) => {
       }
     }
 
-    const updated = await prisma.cityAreaBeat.update({
-      where: { id },
-      data: { assignedToId: userId }
-    });
+    if (segmentId) {
+      const segment = await prisma.beatSegment.findFirst({ where: { id: segmentId, beatId: id } });
+      if (!segment) throw new HttpError(404, "Segment not found in this beat");
 
-    res.json(updated);
+      const updatedSegment = await prisma.beatSegment.update({
+        where: { id: segmentId },
+        data: { assignedToId: userId }
+      });
+      res.json(updatedSegment);
+    } else {
+      // Allow assigning the "main" beat too, but maybe clear segment assignments? 
+      // Or keep them independent. Let's keep independent for now.
+      const updated = await prisma.cityAreaBeat.update({
+        where: { id },
+        data: { assignedToId: userId }
+      });
+      res.json(updated);
+    }
   } catch (err) {
     next(err);
   }
@@ -1145,12 +1219,18 @@ router.get("/areas/my-beats", async (req, res, next) => {
     const beats = await prisma.cityAreaBeat.findMany({
       where: {
         cityId,
-        assignedToId: userId,
-        deletedAt: null
+        deletedAt: null,
+        OR: [
+          { assignedToId: userId },
+          { segments: { some: { assignedToId: userId } } }
+        ]
       },
       include: {
-        assignedTo: {
-          select: { name: true, email: true }
+        assignedTo: { select: { name: true, email: true } },
+        segments: {
+          include: {
+            assignedTo: { select: { name: true, email: true } }
+          }
         }
       },
       orderBy: { createdAt: "desc" }
@@ -1163,14 +1243,30 @@ router.get("/areas/my-beats", async (req, res, next) => {
     });
     const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n.name]));
 
-    const result = beats.map(b => ({
-      ...b,
-      zoneName: nodeMap[b.zoneId] || "Unknown",
-      wardName: nodeMap[b.wardId] || "Unknown",
-      areaName: nodeMap[b.areaId] || "Unknown",
-      assignedToName: b.assignedTo?.name || null,
-      assignedToEmail: b.assignedTo?.email || null
-    }));
+    const result = beats.map(b => {
+      // Determine which segments to show
+      let visibleSegments = b.segments;
+      if (b.assignedToId !== userId) {
+        // If not assigned whole beat, only show segments assigned to me
+        visibleSegments = b.segments.filter((s: any) => s.assignedToId === userId);
+      }
+
+      return {
+        ...b,
+        zoneName: nodeMap[b.zoneId] || "Unknown",
+        wardName: nodeMap[b.wardId] || "Unknown",
+        areaName: nodeMap[b.areaId] || "Unknown",
+        assignedToName: b.assignedTo?.name || null,
+        assignedToEmail: b.assignedTo?.email || null,
+        segments: visibleSegments.map((s: any) => ({
+          id: s.id,
+          geometry: s.geometry,
+          assignedToId: s.assignedToId,
+          assignedToName: s.assignedTo?.name,
+          assignedToEmail: s.assignedTo?.email
+        }))
+      };
+    });
 
     res.json({ beats: result });
   } catch (err) {
