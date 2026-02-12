@@ -29,6 +29,7 @@ function FitBounds({ geometry }: { geometry: any }) {
 interface BeatMapViewProps {
     beat: any;
     onClose: () => void;
+    onRefresh?: () => void;
 }
 
 const VIBRANT_COLORS = [
@@ -95,14 +96,16 @@ function ZoomHandler() {
     return null;
 }
 
-export default function BeatMapView({ beat, onClose }: BeatMapViewProps) {
+export default function BeatMapView({ beat, onClose, onRefresh }: BeatMapViewProps) {
     const [mapType, setMapType] = useState<"streets" | "satellite">("streets");
     const [hoveredFeature, setHoveredFeature] = useState<string | null>(null);
     const [selectedFeature, setSelectedFeature] = useState<any | null>(null);
+    const [selectedSegmentIds, setSelectedSegmentIds] = useState<string[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
     const [showAssignModal, setShowAssignModal] = useState(false);
 
     const explodedGeoJSON = React.useMemo(() => {
+        // Option 1: Use backend-provided segments (best for assignment)
         if (beat.segments && beat.segments.length > 0) {
             return {
                 type: "FeatureCollection",
@@ -113,6 +116,7 @@ export default function BeatMapView({ beat, onClose }: BeatMapViewProps) {
                         id: seg.id,
                         index: i,
                         isSegment: true,
+                        name: seg.name || `Segment ${i + 1}`,
                         assignedToName: seg.assignedToName || beat.assignedToName,
                         assignedToId: seg.assignedToId || beat.assignedToId,
                         isUnassigned: !seg.assignedToId && !beat.assignedToId
@@ -120,13 +124,50 @@ export default function BeatMapView({ beat, onClose }: BeatMapViewProps) {
                 }))
             };
         }
-        return beat.geometry;
+
+        // Option 2: Fallback to raw geometry (explode on the fly)
+        if (!beat.geometry) return { type: "FeatureCollection", features: [] };
+
+        const geom = beat.geometry;
+        const features: any[] = [];
+
+        const process = (g: any, props: any = {}) => {
+            if (!g) return;
+            if (g.type === "FeatureCollection") {
+                g.features.forEach((f: any) => process(f.geometry, f.properties));
+            } else if (g.type === "Feature") {
+                process(g.geometry, g.properties);
+            } else if (g.type === "LineString") {
+                features.push({
+                    type: "Feature", geometry: g,
+                    properties: { ...props, isSegment: true, id: props.id || props.name || `line-${features.length}` }
+                });
+            } else if (g.type === "MultiLineString") {
+                g.coordinates.forEach((coords: any, idx: number) => {
+                    features.push({
+                        type: "Feature", geometry: { type: "LineString", coordinates: coords },
+                        properties: { ...props, isSegment: true, id: `${props.id || props.name || 'mline'}-${idx}` }
+                    });
+                });
+            } else if (g.type === "GeometryCollection") {
+                g.geometries.forEach((geom: any) => process(geom, props));
+            } else {
+                // Points, Polygons, etc. - still keep them for visual context but maybe not marked as segments
+                features.push({ type: "Feature", geometry: g, properties: { ...props, isSegment: false } });
+            }
+        };
+
+        process(geom);
+        return { type: "FeatureCollection", features };
     }, [beat.geometry, beat.segments, beat.assignedToName, beat.assignedToId]);
 
     const features = explodedGeoJSON?.features || [];
-    const filteredFeatures = features.filter((f: any) =>
-        (f.properties?.name || f.properties?.index || "").toString().toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    // QC users primarily care about LineStrings for assignment
+    const filteredFeatures = features.filter((f: any) => {
+        const matchesSearch = (f.properties?.name || f.properties?.index || "").toString().toLowerCase().includes(searchQuery.toLowerCase());
+        const isLine = f.geometry?.type === "LineString" || f.geometry?.type === "MultiLineString";
+        return matchesSearch && isLine;
+    });
 
     const handleZoomIn = () => window.dispatchEvent(new CustomEvent("map-zoom-in"));
     const handleZoomOut = () => window.dispatchEvent(new CustomEvent("map-zoom-out"));
@@ -240,8 +281,22 @@ export default function BeatMapView({ beat, onClose }: BeatMapViewProps) {
                                 }}
                             >
                                 <UserPlus size={18} />
-                                Manage Assignment
+                                {selectedSegmentIds.length > 0 ? `Assign ${selectedSegmentIds.length} Segments` : "Manage Assignment"}
                             </button>
+
+                            {selectedSegmentIds.length > 0 && (
+                                <button
+                                    onClick={() => setSelectedSegmentIds([])}
+                                    style={{
+                                        width: "100%", padding: "10px", borderRadius: "12px",
+                                        border: "1px dashed #ef4444", backgroundColor: "white", color: "#ef4444",
+                                        fontWeight: 600, fontSize: "0.75rem", cursor: "pointer",
+                                        marginBottom: "16px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px"
+                                    }}
+                                >
+                                    <X size={14} /> Clear Selection
+                                </button>
+                            )}
 
                             <div style={{ padding: "0 8px 12px", fontSize: "0.75rem", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase" }}>
                                 Found {filteredFeatures.length} Results
@@ -264,11 +319,17 @@ export default function BeatMapView({ beat, onClose }: BeatMapViewProps) {
                                             cursor: "pointer",
                                             backgroundColor: isActive ? "#eff6ff" : (hoveredFeature === featureId ? "#f8fafc" : "transparent"),
                                             border: "2px solid",
-                                            borderColor: isActive ? "#3b82f6" : "transparent",
+                                            borderColor: f.properties?.isSegment && selectedSegmentIds.includes(f.properties.id) ? "#2563eb" : (isActive ? "#3b82f6" : "transparent"),
                                             transition: "all 0.2s",
-                                            boxShadow: isActive ? "0 4px 12px rgba(59, 130, 246, 0.15)" : "none"
+                                            boxShadow: isActive ? "0 4px 12px rgba(59, 130, 246, 0.15)" : "none",
+                                            position: "relative"
                                         }}
                                     >
+                                        {f.properties?.isSegment && selectedSegmentIds.includes(f.properties.id) && (
+                                            <div style={{ position: "absolute", top: "10px", right: "10px", backgroundColor: "#2563eb", color: "white", borderRadius: "50%", width: "20px", height: "20px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                                <UserPlus size={12} />
+                                            </div>
+                                        )}
                                         <div style={{ display: "flex", alignItems: "flex-start", gap: "14px" }}>
                                             <div style={{
                                                 width: "40px", height: "40px", borderRadius: "12px",
@@ -332,15 +393,16 @@ export default function BeatMapView({ beat, onClose }: BeatMapViewProps) {
                                     const color = getFeatureColor(feature);
                                     const isHovered = hoveredFeature === featureId;
                                     const isSelected = selectedFeature?.properties?.name === featureId || selectedFeature?.properties?.id === props?.id;
+                                    const isSelectedOnMap = props?.isSegment && selectedSegmentIds.includes(props.id);
                                     const isUnassigned = props?.isUnassigned;
 
                                     return {
-                                        color: isUnassigned ? "#94a3b8" : color,
-                                        weight: (isHovered || isSelected) ? 6 : (isUnassigned ? 2 : 4),
-                                        fillOpacity: (isHovered || isSelected) ? 0.45 : 0.25,
-                                        fillColor: isUnassigned ? "#cbd5e1" : color,
-                                        opacity: isUnassigned ? 0.4 : 1,
-                                        dashArray: isUnassigned ? "5, 5" : (isHovered ? "5, 5" : "")
+                                        color: isSelectedOnMap ? "#2563eb" : (isUnassigned ? "#94a3b8" : color),
+                                        weight: (isHovered || isSelected || isSelectedOnMap) ? 7 : (isUnassigned ? 2 : 4),
+                                        fillOpacity: (isHovered || isSelected || isSelectedOnMap) ? 0.6 : 0.25,
+                                        fillColor: isSelectedOnMap ? "#2563eb" : (isUnassigned ? "#cbd5e1" : color),
+                                        opacity: isSelectedOnMap ? 1 : (isUnassigned ? 0.4 : 1),
+                                        dashArray: isSelectedOnMap ? "" : (isUnassigned ? "5, 5" : (isHovered ? "5, 5" : ""))
                                     };
                                 }}
                                 pointToLayer={(feature: any, latlng: any) => {
@@ -369,7 +431,17 @@ export default function BeatMapView({ beat, onClose }: BeatMapViewProps) {
                                         layer.on({
                                             mouseover: () => setHoveredFeature(name),
                                             mouseout: () => setHoveredFeature(null),
-                                            click: () => setSelectedFeature(feature)
+                                            click: (e: any) => {
+                                                const L = require("leaflet");
+                                                L.DomEvent.stopPropagation(e);
+                                                setSelectedFeature(feature);
+                                                // Support selection for assignment if it's a segment
+                                                if (props?.isSegment) {
+                                                    setSelectedSegmentIds(prev =>
+                                                        prev.includes(props.id) ? prev.filter(id => id !== props.id) : [...prev, props.id]
+                                                    );
+                                                }
+                                            }
                                         });
                                     }
 
@@ -433,10 +505,12 @@ export default function BeatMapView({ beat, onClose }: BeatMapViewProps) {
             {showAssignModal && (
                 <AssignBeatModal
                     beat={beat}
+                    initialSelectedSegmentIds={selectedSegmentIds}
                     onClose={() => setShowAssignModal(false)}
                     onSuccess={() => {
                         setShowAssignModal(false);
-                        // Optional: refresh data
+                        setSelectedSegmentIds([]);
+                        if (onRefresh) onRefresh();
                     }}
                 />
             )}

@@ -47,7 +47,9 @@ export default function BeatTable({ beats, onRefresh, onView, onEdit, onViewData
                             <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Ward</th>
                             <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Area</th>
                             <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Beat Name</th>
-                            <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Assigned</th>
+                            <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Role</th>
+                            <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Name</th>
+                            <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Status</th>
                             <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Type</th>
                             <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Created At</th>
                             <th style={{ padding: "12px 24px", fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase", textAlign: "right" }}>Actions</th>
@@ -56,7 +58,7 @@ export default function BeatTable({ beats, onRefresh, onView, onEdit, onViewData
                     <tbody style={{ backgroundColor: "white" }}>
                         {beats.length === 0 ? (
                             <tr>
-                                <td colSpan={8} style={{ padding: "40px 24px", textAlign: "center", color: "#9ca3af" }}>
+                                <td colSpan={10} style={{ padding: "40px 24px", textAlign: "center", color: "#9ca3af" }}>
                                     No beats found. Upload a KML to get started.
                                 </td>
                             </tr>
@@ -68,58 +70,40 @@ export default function BeatTable({ beats, onRefresh, onView, onEdit, onViewData
                                     <td style={{ padding: "16px 24px", fontSize: "0.875rem", color: "#374151" }}>{beat.areaName}</td>
                                     <td style={{ padding: "16px 24px", fontSize: "0.875rem", fontWeight: 500, color: "#111827" }}>{beat.beatName}</td>
                                     <td style={{ padding: "16px 24px", fontSize: "0.875rem", color: "#374151" }}>
-                                        {beat.segments && beat.segments.length > 0 ? (
-                                            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                                                {(() => {
-                                                    const totalSegments = beat.segments.length;
-                                                    const assignedSegments = beat.segments.filter((s: any) => s.assignedToId).length;
-                                                    const isFullyAssigned = totalSegments === assignedSegments && totalSegments > 0;
-                                                    const uniqueAssignees = Array.from(new Set(beat.segments.map((s: any) => s.assignedToName).filter(Boolean)));
+                                        {beat.assignedToName ? (
+                                            <span style={{ backgroundColor: "#eff6ff", color: "#2563eb", padding: "4px 10px", borderRadius: "10px", fontSize: "0.7rem", fontWeight: 800 }}>QC</span>
+                                        ) : (beat.segments?.some((s: any) => s.assignedToId) ? (
+                                            <span style={{ backgroundColor: "#f0fdf4", color: "#16a34a", padding: "4px 10px", borderRadius: "10px", fontSize: "0.7rem", fontWeight: 800 }}>EMPLOYEE</span>
+                                        ) : "-")}
+                                    </td>
+                                    <td style={{ padding: "16px 24px", fontSize: "0.875rem", color: "#374151" }}>
+                                        {(() => {
+                                            if (beat.assignedToName) return beat.assignedToName;
+                                            const segmentAssignees = Array.from(new Set(beat.segments?.map((s: any) => s.assignedToName).filter(Boolean)));
+                                            if (segmentAssignees.length > 0) return segmentAssignees.join(", ");
+                                            return "Unassigned";
+                                        })()}
+                                    </td>
+                                    <td style={{ padding: "16px 24px", fontSize: "0.875rem", color: "#374151" }}>
+                                        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                                            {(() => {
+                                                const totalSegments = beat.totalSegments || beat.segments?.length || 0;
+                                                const assignedSegments = beat.segments?.filter((s: any) => s.assignedToId).length || 0;
+                                                const isFullyAssigned = totalSegments === assignedSegments && totalSegments > 0;
 
-                                                    return (
-                                                        <>
-                                                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                                                <span style={{
-                                                                    backgroundColor: isFullyAssigned ? "#dcfce7" : (assignedSegments > 0 ? "#fef3c7" : "#f3f4f6"),
-                                                                    color: isFullyAssigned ? "#166534" : (assignedSegments > 0 ? "#92400e" : "#6b7280"),
-                                                                    padding: "2px 8px", borderRadius: "6px", fontSize: "0.7rem", fontWeight: 700
-                                                                }}>
-                                                                    {assignedSegments}/{totalSegments} Segments
-                                                                </span>
-                                                            </div>
-                                                            {uniqueAssignees.length > 0 && (
-                                                                <div style={{ fontSize: "0.75rem", color: "#4b5563", maxWidth: "200px", lineHeight: "1.2" }}>
-                                                                    <span style={{ color: "#9ca3af", fontSize: "0.7rem" }}>Agents: </span>
-                                                                    {uniqueAssignees.join(", ")}
-                                                                </div>
-                                                            )}
-                                                        </>
-                                                    );
-                                                })()}
-                                            </div>
-                                        ) : (
-                                            beat.assignedToName ? (
-                                                <div style={{ display: "flex", flexDirection: "column" }}>
-                                                    <span style={{
-                                                        backgroundColor: "#f0f9ff", color: "#0369a1",
-                                                        padding: "4px 10px", borderRadius: "12px", border: "1px solid #bae6fd",
-                                                        fontSize: "0.75rem", fontWeight: 600, display: "inline-block"
-                                                    }}>
-                                                        {beat.assignedToName}
-                                                        <span style={{ fontSize: "0.65rem", fontWeight: 400, opacity: 0.8, marginLeft: "4px" }}>(Whole Beat)</span>
-                                                    </span>
-                                                    <span style={{ fontSize: "0.65rem", color: "#6b7280", marginTop: "2px" }}>{beat.assignedToEmail}</span>
-                                                </div>
-                                            ) : (
-                                                <span style={{
-                                                    backgroundColor: "#f3f4f6", color: "#6b7280",
-                                                    padding: "4px 10px", borderRadius: "12px", border: "1px solid #e5e7eb",
-                                                    fontSize: "0.75rem", fontWeight: 500
-                                                }}>
-                                                    Unassigned
-                                                </span>
-                                            )
-                                        )}
+                                                return (
+                                                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                                        <span style={{
+                                                            backgroundColor: isFullyAssigned ? "#dcfce7" : (assignedSegments > 0 ? "#fef3c7" : "#f3f4f6"),
+                                                            color: isFullyAssigned ? "#166534" : (assignedSegments > 0 ? "#92400e" : "#6b7280"),
+                                                            padding: "2px 8px", borderRadius: "6px", fontSize: "0.7rem", fontWeight: 700
+                                                        }}>
+                                                            {assignedSegments}/{totalSegments} Segments
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
                                     </td>
                                     <td style={{ padding: "16px 24px", fontSize: "0.875rem", color: "#374151" }}>
                                         <span style={{

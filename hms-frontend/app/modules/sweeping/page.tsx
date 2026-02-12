@@ -138,6 +138,40 @@ export default function SweepingModulePage() {
                         </div>
                     </div>
 
+                    {/* QC Summary Cards */}
+                    {isQC && !loading && beats.length > 0 && (
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "24px", marginBottom: "32px" }}>
+                            {beats.slice(0, 3).map(beat => {
+                                const total = beat.totalSegments || beat.segments?.length || 0;
+                                const assigned = beat.segments?.filter((s: any) => s.assignedToId).length || 0;
+                                return (
+                                    <div key={beat.id} style={{ backgroundColor: "white", padding: "20px", borderRadius: "20px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
+                                            <div style={{ fontWeight: 800, color: "#1e293b", fontSize: "1rem" }}>{beat.beatName}</div>
+                                            <div style={{ backgroundColor: "#eff6ff", color: "#2563eb", padding: "4px 8px", borderRadius: "8px", fontSize: "10px", fontWeight: 800 }}>SUMMARY</div>
+                                        </div>
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                                            <div>
+                                                <div style={{ fontSize: "10px", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>Total</div>
+                                                <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "#0f172a" }}>{total}</div>
+                                            </div>
+                                            <div>
+                                                <div style={{ fontSize: "10px", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>Assigned</div>
+                                                <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "#10b981" }}>{assigned}</div>
+                                            </div>
+                                        </div>
+                                        <div style={{ marginTop: "12px", fontSize: "11px", color: "#64748b" }}>
+                                            <strong>{total - assigned}</strong> LineStrings remaining
+                                        </div>
+                                        <div style={{ width: "100%", height: "6px", backgroundColor: "#f1f5f9", borderRadius: "3px", marginTop: "12px", overflow: "hidden" }}>
+                                            <div style={{ width: `${total > 0 ? (assigned / total) * 100 : 0}%`, height: "100%", backgroundColor: "#10b981", borderRadius: "3px" }} />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
                     {loading ? (
                         <div className="card" style={{ padding: "48px", textAlign: "center" }}>
                             <div className="animate-spin" style={{ width: "24px", height: "24px", border: "3px solid #f3f3f3", borderTop: "3px solid #2563eb", borderRadius: "50%", margin: "0 auto" }}></div>
@@ -166,6 +200,7 @@ export default function SweepingModulePage() {
                         <BeatMapView
                             beat={viewingBeat}
                             onClose={() => setViewingBeat(null)}
+                            onRefresh={loadBeats}
                         />
                     )}
 
@@ -188,7 +223,10 @@ export default function SweepingModulePage() {
                         <AssignBeatModal
                             beat={assigningBeat}
                             onClose={() => setAssigningBeat(null)}
-                            onSuccess={loadBeats}
+                            onSuccess={() => {
+                                setAssigningBeat(null);
+                                loadBeats();
+                            }}
                         />
                     )}
 

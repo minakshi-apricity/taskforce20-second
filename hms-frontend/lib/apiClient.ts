@@ -114,11 +114,12 @@ export const AreaBeatApi = {
       headers: {}
     }),
   remove: (id: string) => apiFetch<{ success: boolean }>(`/city/areas/${id}`, { method: "DELETE" }),
-  listPotentialAssignees: (id: string) => apiFetch<any[]>(`/city/areas/${id}/potential-assignees`),
-  assign: (id: string, userId: string, segmentId?: string) =>
+  listPotentialAssignees: (id: string, role?: string) =>
+    apiFetch<any[]>(`/city/areas/${id}/potential-assignees${role ? `?role=${role}` : ""}`),
+  assign: (id: string, userId: string | null, segmentId?: string | null, segmentIds?: string[]) =>
     apiFetch(`/city/areas/${id}/assign`, {
       method: "POST",
-      body: JSON.stringify({ userId, segmentId })
+      body: JSON.stringify({ userId, segmentId, segmentIds })
     })
 };
 
