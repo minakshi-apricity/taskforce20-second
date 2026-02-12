@@ -995,9 +995,15 @@ router.get("/areas/:id/potential-assignees", async (req, res, next) => {
     const beat = await prisma.cityAreaBeat.findUnique({ where: { id } });
     if (!beat || beat.cityId !== cityId) throw new HttpError(404, "Beat not found");
 
-    // Fetch Taskforce (Employee) users from City-level assignments
+    const currentUserRoles = req.auth!.roles || [];
+    const isCityAdmin = currentUserRoles.includes(Role.CITY_ADMIN) || currentUserRoles.includes(Role.HMS_SUPER_ADMIN);
+    const isQC = currentUserRoles.includes(Role.QC);
+
+    const targetRole = isCityAdmin ? Role.QC : Role.EMPLOYEE;
+
+    // Fetch users from City-level assignments
     const records = await prisma.userCity.findMany({
-      where: { cityId, role: Role.EMPLOYEE },
+      where: { cityId, role: targetRole },
       include: {
         user: {
           include: {
@@ -1007,9 +1013,9 @@ router.get("/areas/:id/potential-assignees", async (req, res, next) => {
       }
     });
 
-    // Fetch Taskforce (Employee) users from Module-level assignments
+    // Fetch users from Module-level assignments
     const moduleRecords = await prisma.userModuleRole.findMany({
-      where: { cityId, role: Role.EMPLOYEE },
+      where: { cityId, role: targetRole },
       include: {
         user: {
           include: {
@@ -1045,7 +1051,7 @@ router.get("/areas/:id/potential-assignees", async (req, res, next) => {
           name: user.name,
           email: user.email,
           phone: user.phone,
-          role: "EMPLOYEE",
+          role: targetRole,
           assignedZones: Array.from(zoneIds),
           assignedWards: Array.from(wardIds),
           matchesContext,
@@ -1106,12 +1112,18 @@ router.post("/areas/:id/assign", async (req, res, next) => {
     const beat = await prisma.cityAreaBeat.findUnique({ where: { id } });
     if (!beat || beat.cityId !== cityId) throw new HttpError(404, "Beat not found");
 
-    // Optional: Verify user exists and has EMPLOYEE role in this city
+    // Optional: Verify user exists and has correct role in this city
     if (userId) {
-      const employeeUser = await prisma.userCity.findFirst({
-        where: { cityId, userId, role: Role.EMPLOYEE }
+      const currentUserRoles = req.auth!.roles || [];
+      const isCityAdmin = currentUserRoles.includes(Role.CITY_ADMIN) || currentUserRoles.includes(Role.HMS_SUPER_ADMIN);
+      const targetRole = isCityAdmin ? Role.QC : Role.EMPLOYEE;
+
+      const targetUser = await prisma.userCity.findFirst({
+        where: { cityId, userId, role: targetRole }
       });
-      if (!employeeUser) throw new HttpError(400, "User is not a Taskforce member assigned to this city");
+      if (!targetUser) {
+        throw new HttpError(400, `User is not a ${targetRole} member assigned to this city`);
+      }
     }
 
     const updated = await prisma.cityAreaBeat.update({

@@ -611,3 +611,10 @@ Inconsistent column data: Error creating UUID, invalid character: expected an op
 [ERROR] 2026-02-11T08:31:08.049Z 404 Zone not found
 [ERROR] 2026-02-11T08:31:08.053Z 404 Zone not found
 [ERROR] 2026-02-11T08:47:12.681Z 401 Invalid or expired token
+[ERROR] 2026-02-12T04:29:00.114Z 401 Invalid credentials
+[ERROR] 2026-02-12T04:29:05.780Z 401 Invalid credentials
+[ERROR] 2026-02-12T04:29:06.317Z 401 Invalid credentials
+[ERROR] 2026-02-12T04:47:40.162Z 403 Forbidden
+[ERROR] 2026-02-12T04:47:40.165Z 403 Forbidden
+[ERROR] 2026-02-12T04:47:44.298Z 403 Forbidden
+[ERROR] 2026-02-12T04:47:44.304Z 403 Forbidden

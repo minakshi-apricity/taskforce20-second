@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { X, UserPlus, Check, Loader2, Search, AlertCircle } from "lucide-react";
 import { AreaBeatApi } from "@lib/apiClient";
+import { useAuth } from "@hooks/useAuth";
 
 interface AssignBeatModalProps {
     beat: any;
@@ -11,6 +12,7 @@ interface AssignBeatModalProps {
 }
 
 export default function AssignBeatModal({ beat, onClose, onSuccess }: AssignBeatModalProps) {
+    const { user: currentUser } = useAuth();
     const [loading, setLoading] = useState(false);
     const [fetching, setFetching] = useState(true);
     const [currentAssignedId, setCurrentAssignedId] = useState<string | null>(beat.assignedToId || null);
@@ -18,6 +20,9 @@ export default function AssignBeatModal({ beat, onClose, onSuccess }: AssignBeat
     const [users, setUsers] = useState<any[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [assigned, setAssigned] = useState(false);
+
+    const isCityAdmin = currentUser?.roles?.includes("CITY_ADMIN") || currentUser?.roles?.includes("HMS_SUPER_ADMIN");
+    const targetRoleName = isCityAdmin ? "QC" : "Taskforce";
 
     useEffect(() => {
         fetchUsers();
@@ -117,14 +122,14 @@ export default function AssignBeatModal({ beat, onClose, onSuccess }: AssignBeat
                         {fetching ? (
                             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px", gap: "12px" }}>
                                 <Loader2 size={32} className="animate-spin" style={{ color: "#2563eb" }} />
-                                <span style={{ fontSize: "0.875rem", color: "#6b7280", fontWeight: 500 }}>Fetching taskforce team...</span>
+                                <span style={{ fontSize: "0.875rem", color: "#6b7280", fontWeight: 500 }}>Fetching {targetRoleName} team...</span>
                             </div>
                         ) : filteredUsers.length === 0 ? (
                             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px", textAlign: "center", backgroundColor: "#f9fafb", borderRadius: "12px", border: "1px dashed #e5e7eb" }}>
                                 <AlertCircle size={32} style={{ color: "#9ca3af", marginBottom: "12px" }} />
-                                <div style={{ fontWeight: 700, fontSize: "0.875rem", color: "#374151" }}>No taskforce members found</div>
+                                <div style={{ fontWeight: 700, fontSize: "0.875rem", color: "#374151" }}>No {targetRoleName} members found</div>
                                 <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: "4px" }}>
-                                    Ensure users are assigned the Taskforce role in this city.
+                                    Ensure users are assigned the {targetRoleName} role in this city.
                                 </div>
                             </div>
                         ) : (
