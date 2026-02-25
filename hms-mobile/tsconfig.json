@@ -1,11 +1,13 @@
 {
-  "extends": "expo/tsconfig.base",
+  "extends": "expo/tsconfig.base.json",
   "compilerOptions": {
     "strict": true,
     "baseUrl": "./src",
     "paths": {
       "@/*": ["modules/taskforce/*"]
-    }
+    },
+    "lib": ["esnext", "dom"],
+    "skipLibCheck": true
   },
   "exclude": ["node_modules", "src/modules/taskforce"]
 }
