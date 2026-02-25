@@ -85,7 +85,8 @@ model User {
   password                        String
   createdAt                       DateTime                @default(now())
   updatedAt                       DateTime                @updatedAt
-  sweepingRecords                 SweepingRecord[]
+  sweepingRecords SweepingRecord[]
+  sweepingReviewedRecords SweepingRecord[] @relation("SweepingReviewedBy")
   taskforceRecords                TaskforceRecord[]
   taskforceFeederPointsApproved   TaskforceFeederPoint[]  @relation("TaskforceFeederApprovedBy")
   taskforceFeederPointsRequested  TaskforceFeederPoint[]  @relation("TaskforceFeederRequestedBy")
@@ -236,12 +237,28 @@ model SweepingRecord {
   status        ModuleRecordStatus @default(DRAFT)
   payload       Json
   areaType      AreaType
+  sweepDate     DateTime?          @db.Date
+  submittedAt   DateTime?
+  beatId        String?            @db.Uuid
+  segmentId     String?            @db.Uuid
+  reviewedById  String?            @db.Uuid
+  reviewedAt    DateTime?
+  qcRemark      String?
+  deletedAt     DateTime?
   createdAt     DateTime           @default(now()) @db.Timestamptz(6)
   updatedAt     DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
   city          City               @relation(fields: [cityId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  createdByUser User               @relation(fields: [createdBy], references: [id], onUpdate: NoAction)
+  createdByUser User @relation(fields: [createdBy], references: [id])
+  beat          CityAreaBeat?      @relation("BeatSweepingRecords", fields: [beatId], references: [id])
+  segment       BeatSegment?       @relation("SegmentSweepingRecords", fields: [segmentId], references: [id])
+  reviewedBy    User?              @relation("SweepingReviewedBy", fields: [reviewedById], references: [id])
 
   @@index([cityId])
+  @@index([status])
+  @@index([beatId])
+  @@index([segmentId])
+  @@index([reviewedById])
+  @@index([sweepDate])
 }
 
 model LitterBinRecord {
@@ -565,6 +582,7 @@ enum ModuleRecordStatus {
   DRAFT
   SUBMITTED
   APPROVED
+  REJECTED
 }
 
 enum BinCondition {
@@ -655,22 +673,22 @@ enum IECStatus {
 }
 
 model CityAreaBeat {
-  id         String    @id @default(uuid()) @db.Uuid
-  cityId     String    @db.Uuid
-  zoneId     String    @db.Uuid
-  wardId     String    @db.Uuid
-  areaId     String    @db.Uuid
-  beatName   String
-  geometry   Json?     // Storing as GeoJSON
-  rawKml     String?   @db.Text
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  deletedAt  DateTime?
-
-  assignedToId String?   @db.Uuid
-  city         City      @relation(fields: [cityId], references: [id], onDelete: Cascade)
-  assignedTo   User?     @relation("BeatAssignedTo", fields: [assignedToId], references: [id])
-  segments     BeatSegment[]
+  id            String    @id @default(uuid()) @db.Uuid
+  cityId        String    @db.Uuid
+  zoneId        String    @db.Uuid
+  wardId        String    @db.Uuid
+  areaId        String    @db.Uuid
+  beatName      String
+  geometry      Json?
+  rawKml        String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  assignedToId  String?   @db.Uuid
+  city          City      @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  assignedTo    User?     @relation("BeatAssignedTo", fields: [assignedToId], references: [id])
+  segments      BeatSegment[]
+  sweepingRecords SweepingRecord[] @relation("BeatSweepingRecords")
 
   @@index([cityId])
   @@index([areaId])
@@ -679,6 +697,7 @@ model CityAreaBeat {
   @@map("CityAreaBeat")
 }
 
+
 model BeatSegment {
   id           String       @id @default(uuid()) @db.Uuid
   beatId       String       @db.Uuid
@@ -686,9 +705,9 @@ model BeatSegment {
   assignedToId String?      @db.Uuid
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
-
   beat         CityAreaBeat @relation(fields: [beatId], references: [id], onDelete: Cascade)
   assignedTo   User?        @relation("SegmentAssignedTo", fields: [assignedToId], references: [id])
+  sweepingRecords SweepingRecord[] @relation("SegmentSweepingRecords")
 
   @@index([beatId])
   @@index([assignedToId])
